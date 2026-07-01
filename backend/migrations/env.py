@@ -11,13 +11,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.core.config import settings
 from src.db.models import (
     Base,
-    Player,
-    Game,
-    GamePlayer,
-    Round,
-    Answer,
-    WeeklyLeaderboard,
-    GroupConfig,
 )
 
 config = context.config

@@ -52,59 +52,9 @@ src/
 
 **Entregable:** Bot responde `/start`, `/help`. Base corriendo con Docker.
 
-ESTADO DE LA FASE: 
+ESTADO DE LA FASE: LISTA (ver phase0-guide.md)
 
 ---
-
-Ahora desarrollemos la primera fase completa y avanzada del proyecto por favor:
-
-Fase 0 — Fundación del proyecto
-
-**Objetivo:** Esqueleto del bot, base de datos, infraestructura core.
-
-### Tareas
-
-- [ ] 0.1 Crear repositorio, estructura de directorios y entorno virtual.
-- [ ] 0.2 Configurar `pip` + `requirements.txt`.
-- [ ] 0.3 Docker-compose: `postgres:16`, `redis:7`, `app`.
-- [ ] 0.4 Modelo de datos (SQLAlchemy):
-  - `Player(id, telegram_id, username, first_name, last_name, language_code, created_at)`
-  - `Game(id, group_chat_id, status, current_round, total_rounds, created_at, finished_at)`
-  - `GamePlayer(id, game_id, player_id, score, joined_at)`
-  - `Round(id, game_id, round_number, letter, status, started_at, stopped_at)`
-  - `Answer(id, round_id, player_id, word_slot, raw_text, normalized_text, is_correct, score)`
-  - `WeeklyLeaderboard(id, player_id, week_start, total_score, games_played, rank)`
-- [ ] 0.5 Migration system con `alembic`.
-- [ ] 0.6 Fábrica de `Application` de aiogram con `Dispatcher`, `Router`, `FSM` storage en Redis.
-- [ ] 0.7 Middleware: `Throttling`, `UserExistsMiddleware` (crea Player si no existe).
-- [ ] 0.8 Estructura de ficheros propuesta:
-
-```
-src/
-├── bot.py                  # Entry-point
-├── config.py               # Pydantic Settings
-├── db/
-│   ├── engine.py
-│   ├── models.py
-│   └── repositories/       # CRUDs por entidad
-├── middlewares/
-├── handlers/
-│   ├── start.py
-│   ├── group.py
-│   └── game/
-├── services/
-│   ├── game_orchestrator.py
-│   ├── score_engine.py
-│   ├── spell_corrector.py
-│   └── leaderboard.py
-├── keyboards/
-├── filters/
-└── utils/
-```
-
-**Entregable:** Bot responde `/start`, `/help`. Base corriendo con Docker.
-
-Proporcioname toda la informacion, comandos, datos, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Fase 1 — Registro de grupos y unión a partidas
 
@@ -113,7 +63,7 @@ Proporcioname toda la informacion, comandos, datos, detalles y todas las instruc
 ### Tareas
 
 - [ ] 1.1 Detectar cuando el bot es añadido a un grupo (`my_chat_member` → `ChatMemberHandler`).
-- [ ] 1.2 Comando `/stop` (o `/basta`) — inicia lobby en el grupo.
+- [ ] 1.2 Comando `/stop` — inicia lobby en el grupo.
 - [ ] 1.3 Bot genera un mensaje con:
   - Texto animado (editing message) con `"🛑 STOP — Sala abierta"`
   - Contador de jugadores: `👤 X / 10`
@@ -132,7 +82,40 @@ Proporcioname toda la informacion, comandos, datos, detalles y todas las instruc
 
 **Entregable:** Lobby funcional, unión de hasta 10 jugadores, inicio manual/automático.
 
+ESTADO DE LA FASE:
+
 ---
+
+Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
+
+Fase 1 — Registro de grupos y unión a partidas
+
+**Objetivo:** Unir jugadores a una sala de juego dentro de un grupo.
+
+### Tareas
+
+- [ ] 1.1 Detectar cuando el bot es añadido a un grupo (`my_chat_member` → `ChatMemberHandler`).
+- [ ] 1.2 Comando `/stop` — inicia lobby en el grupo.
+- [ ] 1.3 Bot genera un mensaje con:
+  - Texto animado (editing message) con `"🛑 STOP — Sala abierta"`
+  - Contador de jugadores: `👤 X / 10`
+  - Botón **«🟢 Unirse»** (inline) — cualquiera en el grupo puede unirse.
+  - Botón **«▶️ Iniciar»** (solo visible para el host — primer usuario que ejecutó `/stop`).
+- [ ] 1.4 Al pulsar «Unirse»:
+  - Se añade `GamePlayer` con `joined_at = now()`.
+  - Si llega a 10 → **auto-start** (ver Fase 2).
+- [ ] 1.5 Cada 5s el bot actualiza el mensaje del lobby con el nuevo contador.
+- [ ] 1.6 Temporizador de expiración: si no se une nadie tras 2 min, el lobby se cierra.
+- [ ] 1.7 Si se pulsa «Iniciar» (host) → saltar a Fase 2.
+- [ ] 1.8 Validaciones:
+  - No se puede unir una partida ya iniciada.
+  - Un jugador no puede unirse dos veces.
+  - Solo el host puede iniciar (a menos que se cumpla condición de 10 o timeout).
+
+**Entregable:** Lobby funcional, unión de hasta 10 jugadores, inicio manual/automático.
+
+Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
+
 
 ## Fase 2 — Ciclo de ronda: letra, envío, Stop y evaluación
 

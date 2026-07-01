@@ -1,5 +1,335 @@
-"""Placeholder"""
+import asyncio
+import logging
+from dataclasses import dataclass, field
+from typing import Optional
+
+from aiogram import Bot
+from sqlalchemy import select
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import CallbackQuery
+
+from src.db.engine import async_session_factory
+from src.db.models import GamePlayer, Player
+from src.db.repositories import GameRepository
+from src.keyboards.lobby import lobby_keyboard
 
 
-class GameOrchestrator:
-    pass
+MAX_PLAYERS = 10
+AUTO_START_DELAY = 30  # segundos tras el ultimo join
+LOBBY_EXPIRE = 120  # segundos de inactividad total
+MIN_PLAYERS_TO_START = 2
+
+STATUS_LOBBY = "lobby"
+STATUS_PLAYING = "playing"
+STATUS_CANCELLED = "cancelled"
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LobbyState:
+    game_id: int
+    group_chat_id: int
+    host_telegram_id: int
+    host_name: str
+    message_chat_id: int
+    message_id: int
+    player_telegram_ids: list[int] = field(default_factory=list)
+    player_display_names: list[str] = field(default_factory=list)
+    expire_task: Optional[asyncio.Task] = None
+    animation_task: Optional[asyncio.Task] = None
+    auto_start_task: Optional[asyncio.Task] = None
+
+
+class LobbyManager:
+    """Gestiona las salas activas en memoria, indexadas por group_chat_id."""
+
+    def __init__(self) -> None:
+        self._lobbies: dict[int, LobbyState] = {}
+
+    # --- Consultas ---------------------------------------------------------
+    def has_lobby(self, group_chat_id: int) -> bool:
+        return group_chat_id in self._lobbies
+
+    def get_lobby(self, group_chat_id: int) -> Optional[LobbyState]:
+        return self._lobbies.get(group_chat_id)
+
+    def get_lobby_by_game(self, game_id: int) -> Optional[LobbyState]:
+        for state in self._lobbies.values():
+            if state.game_id == game_id:
+                return state
+        return None
+
+    # --- Crear lobby --------------------------------------------------------
+    async def create_lobby(
+        self, group_chat_id: int, host_player: Player, bot: Bot
+    ) -> Optional[str]:
+        async with async_session_factory() as session:
+            repo = GameRepository(session)
+
+            existing = await repo.get_active_game(group_chat_id)
+            if existing:
+                if existing.status == STATUS_LOBBY and group_chat_id not in self._lobbies:
+                    await repo.update_game_status(existing, STATUS_CANCELLED)
+                else:
+                    return "⚠️ Ya hay una sala abierta en este grupo."
+
+            game = await repo.create_game(group_chat_id)
+            await repo.add_player_to_game(game, host_player, is_host=True)
+
+        host_name = (
+            host_player.first_name
+            or host_player.username
+            or f"ID{host_player.telegram_id}"
+        )
+        text = self._format_lobby_message(
+            title="🛑 STOP - Sala abierta", count=1, players=[host_name]
+        )
+        keyboard = lobby_keyboard(game.id, is_host=True)
+        msg = await bot.send_message(group_chat_id, text, reply_markup=keyboard)
+
+        state = LobbyState(
+            game_id=game.id,
+            group_chat_id=group_chat_id,
+            host_telegram_id=host_player.telegram_id,
+            host_name=host_name,
+            message_chat_id=msg.chat.id,
+            message_id=msg.message_id,
+            player_telegram_ids=[host_player.telegram_id],
+            player_display_names=[host_name],
+        )
+        state.expire_task = asyncio.create_task(self._expire_timer(state, bot))
+        state.animation_task = asyncio.create_task(self._animation_loop(state, bot))
+        self._lobbies[group_chat_id] = state
+        return None
+
+    # --- Unirse ------------------------------------------------------------
+    async def join_lobby(
+        self, game_id: int, player: Player, callback: CallbackQuery, bot: Bot
+    ) -> None:
+        state = self.get_lobby_by_game(game_id)
+        if not state:
+            await callback.answer("❌ Esta sala ya no existe.", show_alert=True)
+            return
+
+        if player.telegram_id in state.player_telegram_ids:
+            await callback.answer("✅ Ya estás en la partida", show_alert=False)
+            return
+
+        if len(state.player_telegram_ids) >= MAX_PLAYERS:
+            await callback.answer(
+                f"❌ La partida ya tiene {MAX_PLAYERS} jugadores.", show_alert=True
+            )
+            return
+
+        async with async_session_factory() as session:
+            repo = GameRepository(session)
+            db_game = await repo.get_by_id(game_id)
+            if not db_game or db_game.status != STATUS_LOBBY:
+                await callback.answer("❌ La partida ya inicio.", show_alert=True)
+                # Limpiar estado huerfano
+                self._cleanup(state)
+                return
+
+            # Doble check en DB
+            if await repo.is_player_in_game(db_game, player):
+                await callback.answer("✅ Ya estas registrado.", show_alert=False)
+                return
+
+            await repo.add_player_to_game(db_game, player, is_host=False)
+
+        name = player.first_name or player.username or f"ID{player.telegram_id}"
+        state.player_telegram_ids.append(player.telegram_id)
+        state.player_display_names.append(name)
+
+        await callback.answer("✅ Te has unido a la partida", show_alert=False)
+
+        # Resetear auto-start si hay suficientes jugadores
+        self._reset_auto_start(state, bot)
+
+        # Si llega a 10 -> auto-start inmediato
+        if len(state.player_telegram_ids) >= MAX_PLAYERS:
+            await self._do_start(state, bot)
+            return
+
+    # --- Iniciar -----------------------------------------------------------
+    async def start_game(
+        self, game_id: int, player: Player, callback: CallbackQuery, bot: Bot
+    ) -> None:
+        state = self.get_lobby_by_game(game_id)
+        if not state:
+            await callback.answer("❌ Sala no encontrada.", show_alert=True)
+            return
+
+        if player.telegram_id != state.host_telegram_id:
+            await callback.answer(
+                "❌ Solo el host puede iniciar la partida.", show_alert=True
+            )
+            return
+
+        if len(state.player_telegram_ids) < MIN_PLAYERS_TO_START:
+            await callback.answer(
+                f"❌ Se necesitan al menos {MIN_PLAYERS_TO_START} jugadores.",
+                show_alert=True,
+            )
+            return
+
+        await self._do_start(state, bot)
+
+    # --- Detener partida ----------------------------------------------------
+    async def cancel_game(self, group_chat_id: int, player: Player, bot: Bot) -> str:
+        state = self._lobbies.get(group_chat_id)
+
+        async with async_session_factory() as session:
+            repo = GameRepository(session)
+            db_game = await repo.get_active_game(group_chat_id)
+
+            if not db_game:
+                return "❌ No hay una partida activa en este grupo."
+
+            stmt = (
+                select(GamePlayer)
+                .where(GamePlayer.game_id == db_game.id)
+                .where(GamePlayer.player_id == player.id)
+                .where(GamePlayer.is_host)
+            )
+            result = await session.execute(stmt)
+            gp = result.scalar_one_or_none()
+            if not gp:
+                return "❌ Solo el host puede cancelar la partida."
+
+            await repo.update_game_status(db_game, STATUS_CANCELLED)
+
+        if state:
+            self._cleanup(state)
+            try:
+                await bot.delete_message(
+                    chat_id=state.message_chat_id, message_id=state.message_id
+                )
+            except TelegramBadRequest:
+                pass
+        return "✅ Partida cancelada."
+
+    # --- Auto-iniciar -------------------------------------------------------
+    def _reset_auto_start(self, state: LobbyState, bot: Bot) -> None:
+        if state.auto_start_task and not state.auto_start_task.done():
+            state.auto_start_task.cancel()
+        if len(state.player_telegram_ids) >= MIN_PLAYERS_TO_START:
+            state.auto_start_task = asyncio.create_task(
+                self._auto_start_timer(state, bot)
+            )
+
+    async def _auto_start_timer(self, state: LobbyState, bot: Bot) -> None:
+        try:
+            await asyncio.sleep(AUTO_START_DELAY)
+            if state.group_chat_id in self._lobbies:
+                await self._do_start(state, bot)
+        except asyncio.CancelledError:
+            pass
+
+    # --- Expiracion por inactividad ------------------------------------------
+    async def _expire_timer(self, state: LobbyState, bot: Bot) -> None:
+        try:
+            await asyncio.sleep(LOBBY_EXPIRE)
+            try:
+                await bot.delete_message(
+                    chat_id=state.message_chat_id,
+                    message_id=state.message_id,
+                )
+            except TelegramBadRequest:
+                pass
+            self._cleanup(state)
+        except asyncio.CancelledError:
+            pass
+
+    # --- Animacion cada 5s ---------------------------------------------------
+    async def _animation_loop(self, state: LobbyState, bot: Bot) -> None:
+        try:
+            dots = 0
+            while True:
+                await asyncio.sleep(5)
+                if state.group_chat_id not in self._lobbies:
+                    break
+                dots = (dots % 3) + 1
+                title = "🛑 STOP - Sala abierta" + "." * dots
+                text = self._format_lobby_message(
+                    title, len(state.player_telegram_ids), state.player_display_names
+                )
+                is_host = state.host_telegram_id in state.player_telegram_ids
+                keyboard = lobby_keyboard(state.game_id, is_host=is_host)
+
+                try:
+                    await bot.edit_message_text(
+                        text,
+                        chat_id=state.message_chat_id,
+                        message_id=state.message_id,
+                        reply_markup=keyboard,
+                    )
+                except TelegramBadRequest as e:
+                    logger.warning("Error editando el mensaje lobby", error=e)
+        except asyncio.CancelledError:
+            pass
+
+    # --- Iniciar partida (placeholder para Fase 2) -----------------------------
+    async def _do_start(self, state: LobbyState, bot: Bot) -> None:
+        """Actualiza estado a 'playing' y muestra mensaje.
+        La logica real de ronda se implementa en Fase 2."""
+
+        async with async_session_factory() as session:
+            repo = GameRepository(session)
+            db_game = await repo.get_by_id(state.game_id)
+            if db_game:
+                await repo.update_game_status(db_game, STATUS_PLAYING)
+
+        self._cleanup(state)
+
+        try:
+            await bot.delete_message(
+                chat_id=state.message_chat_id, message_id=state.message_id
+            )
+        except TelegramBadRequest:
+            pass
+
+        # ── Placeholder: Aqui se llamara a Fase 2 ──────────
+        participants = "\n".join(
+            f"  {i + 1}. {name}" for i, name in enumerate(state.player_display_names)
+        )
+        await bot.send_message(
+            state.group_chat_id,
+            f"🎮 <b>¡Partida iniciada!</b>\n\n"
+            f"{len(state.player_telegram_ids)} jugadores:\n"
+            f"{participants}\n\n"
+            f"<i>Preparando ronda 1...</i>",
+        )
+
+    # --- Limpieza --------------------------------------------------------------
+    def _cleanup(self, state: LobbyState) -> None:
+        self._lobbies.pop(state.group_chat_id, None)
+        for task in (state.expire_task, state.animation_task, state.auto_start_task):
+            if task and not task.done():
+                task.cancel()
+
+    # --- Formateo de mensaje ---------------------------------------------------
+    @staticmethod
+    def _format_lobby_message(
+        title: str,
+        count: int,
+        players: list[str],
+    ) -> str:
+        lines = [f"<b>{title}</b>", "", f"👤 Jugadores: {count}/{MAX_PLAYERS}", ""]
+        if players:
+            lines.extend(f"  {i + 1}. {name}" for i, name in enumerate(players))
+            lines.append("")
+        lines.append(
+            f"⏱ Inicio automático en {AUTO_START_DELAY}s tras la última "
+            f"incorporación (mín. {MIN_PLAYERS_TO_START} jugadores)."
+        )
+        lines.append(
+            f"El host puede presionar <b>Iniciar</b> o esperar a "
+            f"completar {MAX_PLAYERS} jugadores."
+        )
+        return "\n".join(lines)
+
+
+# Singleton
+lobby_manager = LobbyManager()

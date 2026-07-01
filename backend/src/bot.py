@@ -13,8 +13,12 @@ from src.core.config import settings
 from src.db.engine import engine
 from src.handlers.group import group_router
 from src.handlers.start import start_router
+from src.handlers.game.lobby import game_router
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
+
+# -- Variables globales del modulo --
+_redis_client: AsyncRedis | None = None
 
 
 def setup_logging() -> None:
@@ -51,21 +55,24 @@ async def on_startup() -> None:
 
 async def on_shutdown() -> None:
     await engine.dispose()
+    if _redis_client:
+        await _redis_client.close()
     logger.info("Bot detenido")
 
 
 async def main() -> None:
+    global _redis_client
     print("[BOOT] Configurando logging...", flush=True)
     setup_logging()
     logging.getLogger("aiogram").setLevel(logging.INFO)
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
     print("[BOOT] Conectando a Redis...", flush=True)
-    redis_client = AsyncRedis.from_url(settings.redis_url, decode_responses=True)
-    await redis_client.ping()
+    _redis_client = AsyncRedis.from_url(settings.redis_url, decode_responses=True)
+    await _redis_client.ping()
     print("[BOOT] Redis OK", flush=True)
 
-    storage = RedisStorage(redis=redis_client)
+    storage = RedisStorage(redis=_redis_client)
 
     print("[BOOT] Autenticando con Telegram...", flush=True)
     bot = Bot(
@@ -82,12 +89,13 @@ async def main() -> None:
 
     dp.include_router(start_router)
     dp.include_router(group_router)
+    dp.include_router(game_router)
 
-    throttling = ThrottlingMiddleware()
+    throttle_mw = ThrottlingMiddleware()
     user_exists = UserExistsMiddleware()
 
-    dp.message.middleware(throttling)
-    dp.callback_query.middleware(throttling)
+    dp.message.middleware(throttle_mw)
+    dp.callback_query.middleware(throttle_mw)
     dp.message.middleware(user_exists)
     dp.callback_query.middleware(user_exists)
 

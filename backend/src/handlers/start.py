@@ -1,27 +1,31 @@
+import asyncio
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
+from src.utils import delete_after
 
 start_router = Router()
 
 
 @start_router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    await message.answer(
+    msg = await message.answer(
         "<b>🛑 Stop Bot</b>\n\n"
         "El juego clásico de <b>Stop / Basta</b> ahora en Telegram.\n\n"
         "<b>Comandos:</b>\n"
         "• /stop — Iniciar una partida en el grupo\n"
+        "• /cancel — Cancelar una partida en curso (solo host de la partida)\n"
         "• /help — Ayuda\n"
         "• /stats — Estadísticas\n"
         "• /weekly — Leaderboard semanal\n\n"
         "¡Añádeme a un grupo y juega con tus amigos!"
     )
+    asyncio.create_task(delete_after(msg))
 
 
 @start_router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(
+    msg = await message.answer(
         "<b>📖 ¿Cómo jugar?</b>\n\n"
         "1. Ve a un grupo y escribe /stop\n"
         "2. Espera a que se unan jugadores (máx. 10)\n"
@@ -34,3 +38,4 @@ async def cmd_help(message: Message) -> None:
         "• Respuesta incorrecta o vacía → 0 pts\n\n"
         "<b>¿Más dudas?</b> Háblale a @perezheredia el sabe como es la vaina."
     )
+    asyncio.create_task(delete_after(msg))

@@ -28,6 +28,7 @@ class Player(Base):
 
     game_players: Mapped[list["GamePlayer"]] = relationship(back_populates="player")
     answers: Mapped[list["Answer"]] = relationship(back_populates="player")
+    weekly_leaderboards: Mapped[list["WeeklyLeaderboard"]] = relationship(back_populates="player")
 
 
 class Game(Base):
@@ -107,7 +108,7 @@ class WeeklyLeaderboard(Base):
     games_played: Mapped[int] = mapped_column(default=0)
     rank: Mapped[Optional[int]] = mapped_column(nullable=True)
 
-    player: Mapped["Player"] = relationship()
+    player: Mapped["Player"] = relationship(back_populates="weekly_leaderboards")
 
 
 class GroupConfig(Base):
