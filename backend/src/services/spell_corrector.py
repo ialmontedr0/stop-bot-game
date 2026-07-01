@@ -1,5 +1,5 @@
 """Placeholder"""
 
 
-class ScoreEngine:
+class SpellCorrector:
     pass

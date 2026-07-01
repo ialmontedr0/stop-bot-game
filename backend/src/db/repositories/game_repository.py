@@ -26,7 +26,7 @@ class GameRepository(BaseRepository[Game]):
         self, game: Game, player: Player, is_host: bool = False
     ) -> GamePlayer:
         gp = GamePlayer(game_id=game.id, player_id=player.id, is_host=is_host)
-        self.session.add()
+        self.session.add(gp)
         await self.session.commit()
         await self.session.refresh(gp)
         return gp

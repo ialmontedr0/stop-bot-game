@@ -39,7 +39,7 @@ class BaseRepository(Generic[ModelType]):
 
     async def delete(self, id: int) -> bool:
         result = await self.session.execute(
-            delete(self.model).where(self.mode.id == id)
+            delete(self.model).where(self.model.id == id)
         )
         await self.session.commit()
         return result.rowcount > 0
