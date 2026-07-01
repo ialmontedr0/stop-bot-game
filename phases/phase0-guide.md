@@ -1029,14 +1029,7 @@ pip install -r requirements.txt
 Edita `.env` con tu token real de BotFather.
 
 
-### 11.4 Ejecutar migraciones de base de datos
-
-```powershell
-alembic revision --autogenerate -m "initial"
-alembic upgrade head
-```
-
-### 11.5 Iniciar el bot
+### 11.4 Iniciar el bot
 
 ```powershell
 python -m src.bot
@@ -1049,7 +1042,7 @@ Deberías ver:
 2025-01-01T12:00:00.000000Z [info     ] Starting polling...
 ```
 
-### 11.7 Verificar
+### 11.5 Verificar
 
 1. Abre Telegram, busca tu bot y escribe `/start` → debe responder con el mensaje de bienvenida.
 2. Añade el bot a un grupo → debe responder "Gracias por añadirme...".
@@ -1073,23 +1066,23 @@ Deberías ver:
                            │
               ┌────────────┼────────────┐
               │            │            │
-       ┌──────▼─────┐ ┌───▼───┐ ┌─────▼─────┐
-       │ Middlewares │ │Handlers│ │  Services │
-       │ throttling │ │ start  │ │ (future)  │
-       │ user_exists│ │ group  │ │orchestrator│
-       └────────────┘ └───┬───┘ │score_engine│
+       ┌──────▼─────┐ ┌────▼───┐┌─────▼──────┐
+       │ Middlewares│ │Handlers││  Services  │
+       │ throttling │ │ start  ││ (future)   │
+       │ user_exists│ │ group  ││orchestrator│
+       └────────────┘ └───┬────┘│score_engine│
                           │     │spell_corr  │
                    ┌──────▼──┐  │leaderboard │
-                   │   DB    │  └───────────┘
+                   │   DB    │  └────────────┘
                    │  repos  │
                    └────┬───-┘
                         │
               ┌─────────┴──────────┐
               │                    │
-       ┌──────▼──────┐    ┌───────▼──────┐
-       │  PostgreSQL  │    │    Redis     │
-       │  (persist)   │    │ (cache/FSM)  │
-       └─────────────┘    └──────────────┘
+       ┌──────▼──────┐     ┌───────▼──────┐
+       │  PostgreSQL │     │    Redis     │
+       │  (persist)  │     │ (cache/FSM)  │
+       └─────────────┘     └──────────────┘
 ```
 
 ---
