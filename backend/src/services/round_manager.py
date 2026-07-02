@@ -286,6 +286,9 @@ class RoundManager:
                         stopped_by_player_id=stopped_by,
                     )
 
+            if round_id is not None:
+                await self._persist_round_scores(round_id, state)
+
             try:
                 await bot.edit_message_text(
                     f"{reason_text}\n\n"
@@ -516,6 +519,35 @@ class RoundManager:
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after)
 
+    async def _persist_round_scores(
+        self,
+        round_id: int,
+        state: RoundState,
+    ) -> None:
+        async with async_session_factory() as session:
+            repo = RoundRepository(session)
+            answers_by_player = await repo.get_answers_by_player(round_id)
+
+            engine = ScoreEngine()
+            scores = engine.calculate(
+                answers_by_player,
+                len(state.categories),
+                first_completer_id=state.first_completer_db_id,
+            )
+
+            for db_player_id, round_score in scores.items():
+                result = await session.execute(
+                    select(GamePlayer).where(
+                        GamePlayer.game_id == state.game_id,
+                        GamePlayer.player_id == db_player_id,
+                    )
+                )
+                gp = result.scalar_one_or_none()
+                if gp:
+                    gp.score = (gp.score or 0) + round_score
+
+            await session.commit()
+
     async def _build_summary(
         self, round_id: Optional[int], state: RoundState
     ) -> str:
@@ -533,7 +565,7 @@ class RoundManager:
             scores = engine.calculate(
                 all_rounds_answers,
                 len(state.categories),
-                first_completer_id=state.first_completer_id,
+                first_completer_id=state.first_completer_db_id,
             )
 
         lines = [
