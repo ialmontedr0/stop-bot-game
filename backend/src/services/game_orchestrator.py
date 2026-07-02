@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -12,6 +13,7 @@ from src.db.engine import async_session_factory
 from src.db.models import GamePlayer, Player
 from src.db.repositories import GameRepository
 from src.keyboards.lobby import lobby_keyboard
+from src.services.round_manager import round_manager
 
 
 MAX_PLAYERS = 10
@@ -270,11 +272,8 @@ class LobbyManager:
         except asyncio.CancelledError:
             pass
 
-    # --- Iniciar partida (placeholder para Fase 2) -----------------------------
+    # --- Iniciar partida -------------------------------------------------------
     async def _do_start(self, state: LobbyState, bot: Bot) -> None:
-        """Actualiza estado a 'playing' y muestra mensaje.
-        La logica real de ronda se implementa en Fase 2."""
-
         async with async_session_factory() as session:
             repo = GameRepository(session)
             db_game = await repo.get_by_id(state.game_id)
@@ -290,7 +289,10 @@ class LobbyManager:
         except TelegramBadRequest:
             pass
 
-        # ── Placeholder: Aqui se llamara a Fase 2 ──────────
+        player_names = dict(
+            zip(state.player_telegram_ids, state.player_display_names)
+        )
+
         participants = "\n".join(
             f"  {i + 1}. {name}" for i, name in enumerate(state.player_display_names)
         )
@@ -300,6 +302,18 @@ class LobbyManager:
             f"{len(state.player_telegram_ids)} jugadores:\n"
             f"{participants}\n\n"
             f"<i>Preparando ronda 1...</i>",
+        )
+
+        letter = random.choice(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+
+        await round_manager.start_round(
+            game_id=state.game_id,
+            group_chat_id=state.group_chat_id,
+            round_number=1,
+            letter=letter,
+            total_players=len(state.player_telegram_ids),
+            player_names=player_names,
+            bot=bot,
         )
 
     # --- Limpieza --------------------------------------------------------------

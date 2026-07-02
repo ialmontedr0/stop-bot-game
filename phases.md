@@ -82,40 +82,9 @@ ESTADO DE LA FASE: LISTA (ver phase0-guide.md)
 
 **Entregable:** Lobby funcional, unión de hasta 10 jugadores, inicio manual/automático.
 
-ESTADO DE LA FASE:
+ESTADO DE LA FASE: LISTA (ver el phase1-guide.md)
 
 ---
-
-Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
-
-Fase 1 — Registro de grupos y unión a partidas
-
-**Objetivo:** Unir jugadores a una sala de juego dentro de un grupo.
-
-### Tareas
-
-- [ ] 1.1 Detectar cuando el bot es añadido a un grupo (`my_chat_member` → `ChatMemberHandler`).
-- [ ] 1.2 Comando `/stop` — inicia lobby en el grupo.
-- [ ] 1.3 Bot genera un mensaje con:
-  - Texto animado (editing message) con `"🛑 STOP — Sala abierta"`
-  - Contador de jugadores: `👤 X / 10`
-  - Botón **«🟢 Unirse»** (inline) — cualquiera en el grupo puede unirse.
-  - Botón **«▶️ Iniciar»** (solo visible para el host — primer usuario que ejecutó `/stop`).
-- [ ] 1.4 Al pulsar «Unirse»:
-  - Se añade `GamePlayer` con `joined_at = now()`.
-  - Si llega a 10 → **auto-start** (ver Fase 2).
-- [ ] 1.5 Cada 5s el bot actualiza el mensaje del lobby con el nuevo contador.
-- [ ] 1.6 Temporizador de expiración: si no se une nadie tras 2 min, el lobby se cierra.
-- [ ] 1.7 Si se pulsa «Iniciar» (host) → saltar a Fase 2.
-- [ ] 1.8 Validaciones:
-  - No se puede unir una partida ya iniciada.
-  - Un jugador no puede unirse dos veces.
-  - Solo el host puede iniciar (a menos que se cumpla condición de 10 o timeout).
-
-**Entregable:** Lobby funcional, unión de hasta 10 jugadores, inicio manual/automático.
-
-Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
-
 
 ## Fase 2 — Ciclo de ronda: letra, envío, Stop y evaluación
 
@@ -164,7 +133,73 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
 
 **Entregable:** Ronda completa con temporizador, envío de respuestas, Stop y transición.
 
+ESTADO DE LA FASE: 
+
 ---
+
+Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
+
+Fase 2 — Ciclo de ronda: letra, envío, Stop y evaluación
+
+**Objetivo:** Núcleo del juego — rondas completas con temporizador, Stop, y puntuación.
+
+### Tareas
+
+- [ ] 2.1 **Selección de letra (primera ronda):**
+  - Random con `random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")`.
+  - Excluir Ñ (o incluirla según región configurable).
+
+- [ ] 2.2 **Temporizador de ronda:** 60s controlado con `asyncio.create_task` + `Redis` expiry como fallback.
+
+- [ ] 2.3 **Plantilla de categorías** (8-12 fijas, ej.):
+  - Nombre, País/Ciudad, Animal, Comida, Objeto, Profesión, Deporte, Color, Marca, Verbo, Película, Planta.
+
+- [ ] 2.4 Bot envía mensaje formateado con la letra y las categorías:
+  ```
+  🛑 Ronda 1 — Letra: **F**
+  ⏱ 60 segundos
+
+  Envía tus respuestas en este formato:
+  Nombre:
+  Apellido:
+  Color:
+  Fruta:
+  País:
+  Artista:
+  Novela/Serie:
+  Cosa:
+
+  ...
+  ```
+- [ ] 2.5 **Parser de respuestas:**
+  - Regex que extrae `categoría: valor`.
+  - Ignora mayúsculas/minúsculas, espacios extra.
+  - Devuelve `dict[Categoría, str]`.
+
+- [ ] 2.6 **Normalización y fuzzy matching** (ver Fase 4): en esta fase solo guardamos raw_text.
+
+- [ ] 2.7 **Sistema Stop:**
+  - Cuando el primer jugador envía una respuesta **completa** (todas las categorías rellenas) → el bot le da la opcion de hacer **«⏹ Stop»** con un boton.
+  - Otros jugadores NO pueden usar este.
+  - Timeout del botón: 5s.
+  - Al pulsar Stop 1 → desaparece el boton de Stop 1 -> aparece el boton de Stop 2 -> Al pulsar Stop 2 -> desaparece el boton de Stop 2 -> aparece el boton de Stop -> Asi sucesivamente hasta agotar los 10 botones de Stop. En caso de que todos los participantes envien sus respuestas el bot deja de mostrar el boton de Stop [N] al usuario que envio su respuesta completa de primero y la ronda se cierra inmediatamente.
+  - Si nadie hace Stop → la ronda termina a los 60s.
+
+- [ ] 2.8 **Cierre de ronda:**
+  - Bot edita el mensaje del grupo: `"⏹ Ronda detenida"` o `"⌛ Tiempo agotado"`.
+  - Llama al `ScoreEngine` (Fase 3).
+
+- [ ] 2.9 **Mostrar puntuación parcial:** Bot envía resumen de puntos de la ronda.
+
+- [ ] 2.10 **Transición a siguiente ronda:**
+  - El líder (máximo puntaje acumulado) recibe inline keyboard con el alfabeto.
+  - Selecciona letra → 5s countdown → nueva ronda.
+  - Si hay empate, elige el primero en llegar a esa posición.
+
+**Entregable:** Ronda completa con temporizador, envío de respuestas, Stop y transición.
+
+Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
+
 
 ## Fase 3 — Motor de puntuación (Score Engine)
 

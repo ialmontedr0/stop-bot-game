@@ -13,7 +13,7 @@ from src.core.config import settings
 from src.db.engine import engine
 from src.handlers.group import group_router
 from src.handlers.start import start_router
-from src.handlers.game.lobby import game_router
+from src.handlers.game import game_router, round_router
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
 
@@ -90,6 +90,7 @@ async def main() -> None:
     dp.include_router(start_router)
     dp.include_router(group_router)
     dp.include_router(game_router)
+    dp.include_router(round_router)
 
     throttle_mw = ThrottlingMiddleware()
     user_exists = UserExistsMiddleware()
