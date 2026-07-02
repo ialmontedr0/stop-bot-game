@@ -1,4 +1,6 @@
 import asyncio
+import logging
+
 from aiogram import Bot, Router, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
@@ -6,6 +8,8 @@ from aiogram.types import CallbackQuery, Message
 from src.utils import delete_after
 from src.db.models import Player
 from src.services.game_orchestrator import lobby_manager
+
+logger = logging.getLogger(__name__)
 
 game_router = Router()
 
@@ -21,8 +25,10 @@ async def cmd_stop(message: Message, player: Player, bot: Bot) -> None:
         group_chat_id=message.chat.id, host_player=player, bot=bot
     )
     if result is None:
-        msg = await message.answer("✅ Sala creada. Esperando jugadores...")
-        asyncio.create_task(delete_after(msg))
+        try:
+            await message.delete()
+        except Exception:
+            logger.warning("No se pudo eliminar el mensaje /stop en %s", message.chat.id)
     else:
         await message.answer(result)
 
@@ -43,18 +49,34 @@ async def cmd_cancel(message: Message, player: Player, bot: Bot) -> None:
 
 @game_router.callback_query(F.data.startswith("join:"))
 async def callback_join(callback: CallbackQuery, player: Player, bot: Bot) -> None:
-    game_id = int(callback.data.split(":")[1])
-    await lobby_manager.join_lobby(
-        game_id=game_id,
-        player=player,
-        callback=callback,
-        bot=bot,
-    )
+    try:
+        game_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Datos inválidos.", show_alert=True)
+        return
+    try:
+        await lobby_manager.join_lobby(
+            game_id=game_id,
+            player=player,
+            callback=callback,
+            bot=bot,
+        )
+    except Exception:
+        logger.exception("Error en join_lobby")
+        await callback.answer("❌ Error al unirse a la partida.", show_alert=True)
 
 
 @game_router.callback_query(F.data.startswith("start:"))
 async def callback_start(callback: CallbackQuery, player: Player, bot: Bot) -> None:
-    game_id = int(callback.data.split(":")[1])
-    await lobby_manager.start_game(
-        game_id=game_id, player=player, callback=callback, bot=bot
-    )
+    try:
+        game_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Datos inválidos.", show_alert=True)
+        return
+    try:
+        await lobby_manager.start_game(
+            game_id=game_id, player=player, callback=callback, bot=bot
+        )
+    except Exception:
+        logger.exception("Error en start_game")
+        await callback.answer("❌ Error al iniciar la partida.", show_alert=True)

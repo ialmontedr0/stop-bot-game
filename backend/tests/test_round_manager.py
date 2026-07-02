@@ -1,3 +1,5 @@
+import asyncio
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,10 +13,24 @@ from src.services.round_manager import (
     ALPHABET,
     RoundState,
     RoundManager,
-    round_manager,
     parse_answers,
     ANSWER_REGEX,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_db():
+    rm_mod = sys.modules["src.services.round_manager"]
+    with patch.object(rm_mod, "async_session_factory") as m:
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_result.scalars.return_value = mock_scalars
+        mock_result.one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        m.return_value.__aenter__.return_value = mock_session
+        yield
 
 
 # ── ANSWER_REGEX ────────────────────────────────────────────────────────────
@@ -58,11 +74,11 @@ class TestParseAnswers:
         assert result == {"Nombre": "Juan"}
 
     def test_parses_multiple_answers(self):
-        text = "Nombre: Juan\nColor: Rojo\nAnimal: Perro"
+        text = "Nombre: Juan\nColor: Rojo\nFruta: Manzana"
         result = parse_answers(text, CATEGORIES)
         assert result["Nombre"] == "Juan"
         assert result["Color"] == "Rojo"
-        assert result["Animal"] == "Perro"
+        assert result["Fruta"] == "Manzana"
 
     def test_case_insensitive_category(self):
         result = parse_answers("nombre: juan\nCOLOR: rojo", CATEGORIES)
@@ -190,6 +206,10 @@ class TestStartRound:
         assert state.timer_task is not None
         assert not state.timer_task.done()
         state.timer_task.cancel()
+        try:
+            await state.timer_task
+        except asyncio.CancelledError:
+            pass
         bot.send_message.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -206,6 +226,7 @@ class TestStartRound:
         )
 
         old_state = fresh_round_manager.get_active_round(1)
+        old_timer = old_state.timer_task
 
         await fresh_round_manager.start_round(
             game_id=1, group_chat_id=-100, round_number=2, letter="B",
@@ -216,7 +237,16 @@ class TestStartRound:
         assert new_state is not old_state
         assert new_state.round_number == 2
         assert new_state.letter == "B"
+        old_timer.cancel()
+        try:
+            await old_timer
+        except asyncio.CancelledError:
+            pass
         new_state.timer_task.cancel()
+        try:
+            await new_state.timer_task
+        except asyncio.CancelledError:
+            pass
 
 
 class TestSubmitAnswers:
@@ -240,6 +270,13 @@ class TestSubmitAnswers:
             game_id=1, group_chat_id=-100, round_number=1, letter="A",
             total_players=2, player_names={111: "Alice"}, bot=bot,
         )
+
+        state = fresh_round_manager.get_active_round(1)
+        state.timer_task.cancel()
+        try:
+            await state.timer_task
+        except asyncio.CancelledError:
+            pass
 
         player = MagicMock(spec=Player)
         player.telegram_id = 111
@@ -277,6 +314,11 @@ class TestPressStop:
         )
 
         state = fresh_round_manager.get_active_round(1)
+        state.timer_task.cancel()
+        try:
+            await state.timer_task
+        except asyncio.CancelledError:
+            pass
         state.first_completer_id = 111
 
         callback = AsyncMock()
@@ -308,6 +350,8 @@ class TestCloseRound:
 
         state = fresh_round_manager.get_active_round(1)
         state.timer_task = None
+
+        fresh_round_manager._transition_next_round = AsyncMock()
 
         mock_db_round = MagicMock()
         mock_db_round.id = 1
@@ -354,6 +398,10 @@ class TestCloseRound:
             mock_repo_cls.return_value = mock_repo
             await fresh_round_manager._close_round(1, "stop", bot)
 
+        try:
+            await timer
+        except asyncio.CancelledError:
+            pass
         assert timer.cancelled()
 
 
@@ -371,11 +419,11 @@ class TestParseAnswersFunction:
         assert len(result) == 2
 
     def test_parse_answers_case_insensitive(self):
-        text = "NOMBRE: Juan\ncolor: rojo\nPAÍS O CIUDAD: Bogotá"
+        text = "NOMBRE: Juan\ncolor: rojo\nPAÍS: Bogotá"
         result = parse_answers(text, CATEGORIES)
         assert result.get("Nombre") == "Juan"
         assert result.get("Color") == "rojo"
-        assert result.get("País o Ciudad") == "Bogotá"
+        assert result.get("País") == "Bogotá"
 
 
 class TestRoundManagerConstants:

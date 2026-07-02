@@ -16,6 +16,7 @@ from src.handlers.start import start_router
 from src.handlers.game import game_router, round_router
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
+from src.services.game_orchestrator import game_orchestrator
 
 # -- Variables globales del modulo --
 _redis_client: AsyncRedis | None = None
@@ -51,6 +52,7 @@ logger = structlog.get_logger(__name__)
 
 async def on_startup() -> None:
     logger.info("Bot iniciado", version="1.0.0")
+    await game_orchestrator.cleanup_stale_games()
 
 
 async def on_shutdown() -> None:
@@ -68,7 +70,7 @@ async def main() -> None:
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
     print("[BOOT] Conectando a Redis...", flush=True)
-    _redis_client = AsyncRedis.from_url(settings.redis_url, decode_responses=True)
+    _redis_client = AsyncRedis.from_url(settings.redis_url)
     await _redis_client.ping()
     print("[BOOT] Redis OK", flush=True)
 
@@ -102,7 +104,7 @@ async def main() -> None:
 
     print("[BOOT] Iniciando polling...", flush=True)
     logger.info("Iniciando polling...")
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, skip_updates=True)
 
 
 if __name__ == "__main__":

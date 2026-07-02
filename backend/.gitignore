@@ -9,7 +9,7 @@ build/
 venv/
 
 # Env
-.Env
+.env
 
 # IDE
 .vscode/

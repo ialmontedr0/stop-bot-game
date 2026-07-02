@@ -17,7 +17,9 @@ class ThrottlingMiddleware(BaseMiddleware):
             now = time.time()
             last = self.cache.get(user_id, 0.0)
             if now - last < self.rate_limit:
-                return  # silencioso ignorado
+                if isinstance(event, CallbackQuery):
+                    await event.answer("⏳ Demasiado rápido. Espera un momento.", show_alert=False)
+                return
             self.cache[user_id] = now
         return await handler(event, data)
 

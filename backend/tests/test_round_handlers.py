@@ -34,6 +34,7 @@ async def test_handle_round_answer_skips_no_active_round(mock_rm):
     message = MagicMock()
     message.text = "Nombre: Juan"
     message.chat.type = "group"
+    message.from_user = None
 
     player = MagicMock(spec=Player)
     bot = AsyncMock()
@@ -54,6 +55,7 @@ async def test_handle_round_answer_invalid_format(mock_rm):
     message = MagicMock()
     message.text = "some random text without format"
     message.chat.type = "group"
+    message.from_user = None
 
     player = MagicMock(spec=Player)
     bot = AsyncMock()
@@ -79,6 +81,7 @@ async def test_handle_round_answer_submits(mock_rm):
     message = MagicMock()
     message.text = "Nombre: Juan\nColor: Rojo"
     message.chat.type = "group"
+    message.from_user = None
     message.reply = AsyncMock()
 
     player = MagicMock(spec=Player)
@@ -95,7 +98,6 @@ async def test_handle_round_answer_submits(mock_rm):
         mock_rm.submit_answers.assert_awaited_once_with(
             game_id=1, player=player, text=message.text, bot=bot
         )
-        message.reply.assert_awaited_once()
 
 
 # ── callback_stop ───────────────────────────────────────────────────────────

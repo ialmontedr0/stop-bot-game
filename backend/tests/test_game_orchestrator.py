@@ -5,12 +5,10 @@ import pytest
 
 from src.db.models import Player
 from src.services.game_orchestrator import (
-    LOBBY_EXPIRE,
     MAX_PLAYERS,
     MIN_PLAYERS_TO_START,
     LobbyManager,
     LobbyState,
-    lobby_manager,
 )
 
 

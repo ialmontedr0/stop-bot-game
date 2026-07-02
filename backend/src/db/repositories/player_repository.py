@@ -26,6 +26,18 @@ class PlayerRepository(BaseRepository[Player]):
     ) -> Player:
         player = await self.get_by_telegram_id(telegram_id)
         if player:
+            changed = False
+            for field, value in [
+                ("username", username),
+                ("first_name", first_name),
+                ("last_name", last_name),
+                ("language_code", language_code),
+            ]:
+                if value is not None and getattr(player, field) != value:
+                    setattr(player, field, value)
+                    changed = True
+            if changed:
+                await self.session.flush()
             return player
         return await self.create(
             telegram_id=telegram_id,

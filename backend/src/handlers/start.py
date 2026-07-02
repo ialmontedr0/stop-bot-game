@@ -20,7 +20,8 @@ async def cmd_start(message: Message) -> None:
         "• /weekly — Leaderboard semanal\n\n"
         "¡Añádeme a un grupo y juega con tus amigos!"
     )
-    asyncio.create_task(delete_after(msg))
+    if message.chat.type in ("group", "supergroup"):
+        asyncio.create_task(delete_after(msg))
 
 
 @start_router.message(Command("help"))
@@ -38,4 +39,5 @@ async def cmd_help(message: Message) -> None:
         "• Respuesta incorrecta o vacía → 0 pts\n\n"
         "<b>¿Más dudas?</b> Háblale a @perezheredia el sabe como es la vaina."
     )
-    asyncio.create_task(delete_after(msg))
+    if message.chat.type in ("group", "supergroup"):
+        asyncio.create_task(delete_after(msg))

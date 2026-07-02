@@ -1,6 +1,7 @@
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from src.db.models import Answer, GamePlayer, Round
 
@@ -101,13 +102,14 @@ class RoundRepository(BaseRepository[Round]):
     ) -> dict[int, list[Answer]]:
         stmt = (
             select(Answer)
+            .options(selectinload(Answer.player))
             .where(Answer.round_id == round_id)
             .order_by(Answer.player_id)
         )
         rows = (await self.session.execute(stmt)).scalars().all()
         result: dict[int, list[Answer]] = {}
         for a in rows:
-            result.setdefault(a.player_id, []).append(a)
+            result.setdefault(a.player.telegram_id, []).append(a)
         return result
 
     async def get_total_rounds(self, game_id: int) -> int:

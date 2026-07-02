@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import Row, select
@@ -81,3 +82,13 @@ class GameRepository(BaseRepository[Game]):
         await self.session.commit()
         await self.session.refresh(game)
         return game
+
+    async def get_stale_games(self) -> list[Game]:
+        cutoff = datetime.utcnow() - timedelta(days=1)
+        stmt = (
+            select(Game)
+            .where(Game.status.in_(["lobby", "playing"]))
+            .where(Game.created_at < cutoff)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

@@ -2,7 +2,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import Message
 
 from src.middlewares.throttling import ThrottlingMiddleware
 

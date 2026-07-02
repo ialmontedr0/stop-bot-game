@@ -83,8 +83,8 @@ class Answer(Base):
     __tablename__ = "answers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"))
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
     game_player_id: Mapped[int] = mapped_column(ForeignKey("game_players.id"))
     word_slot: Mapped[str] = mapped_column(String(64))
     raw_text: Mapped[str] = mapped_column(String(256))
@@ -103,7 +103,7 @@ class WeeklyLeaderboard(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
-    week_start: Mapped[date]
+    week_start: Mapped[date] = mapped_column(default=func.current_date())
     total_score: Mapped[int] = mapped_column(default=0)
     games_played: Mapped[int] = mapped_column(default=0)
     rank: Mapped[Optional[int]] = mapped_column(nullable=True)

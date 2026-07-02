@@ -7,13 +7,14 @@ from typing import Optional
 
 from sqlalchemy import select
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter, TelegramForbiddenError
 
 from src.db.engine import async_session_factory
 from src.db.models import Player, GamePlayer
 from src.db.repositories.game_repository import GameRepository
 from src.db.repositories.round_repository import RoundRepository
 from src.keyboards.round import stop_keyboard, letter_keyboard
+from src.services.score_engine import ScoreEngine
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +23,17 @@ ROUND_DURATION = 60
 TOTAL_ROUNDS = 5
 
 CATEGORIES = [
-    "Nombre", "Apellido", "Color", "Fruta",
-    "País o Ciudad", "Artista o Banda", "Película o Serie", "Cosa",
-    "Animal", "Profesión", "Deporte", "Marca",
+    "Nombre",
+    "Apellido",
+    "Color",
+    "Fruta",
+    "País",
+    "Artista",
+    "Novela/Serie",
+    "Cosa",
 ]
 
-CATEGORIES_DISPLAY = "\n".join(
-    f"  <b>{cat}:</b> ..." for cat in CATEGORIES
-)
+CATEGORIES_DISPLAY = "\n".join(f"  <b>{cat}:</b> ..." for cat in CATEGORIES)
 
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -47,9 +51,14 @@ class RoundState:
     submitted_player_ids: set[int] = field(default_factory=set)
     complete_player_ids: set[int] = field(default_factory=set)
     first_completer_id: Optional[int] = None
+    first_completer_db_id: Optional[int] = None
     first_completer_name: Optional[str] = None
+    leader_id: Optional[int] = None
+    letter_timeout_task: Optional[asyncio.Task] = None
+    update_task: Optional[asyncio.Task] = None
     stop_presses: int = 0
     total_players: int = 0
+    total_rounds: int = TOTAL_ROUNDS
     stop_message_chat_id: Optional[int] = None
     stop_message_id: Optional[int] = None
     player_names: dict[int, str] = field(default_factory=dict)
@@ -58,13 +67,20 @@ class RoundState:
 class RoundManager:
     def __init__(self) -> None:
         self._rounds: dict[int, RoundState] = {}
+        self._rounds_by_group: dict[int, int] = {}
+        self._letter_pending: dict[int, RoundState] = {}
+        self._locks: dict[int, asyncio.Lock] = {}
 
     def get_active_round(self, game_id: int) -> Optional[RoundState]:
         return self._rounds.get(game_id)
 
     def get_active_round_by_group(self, group_chat_id: int) -> Optional[RoundState]:
+        game_id = self._rounds_by_group.get(group_chat_id)
+        if game_id is not None:
+            return self._rounds.get(game_id)
         for state in self._rounds.values():
             if state.group_chat_id == group_chat_id:
+                self._rounds_by_group[group_chat_id] = state.game_id
                 return state
         return None
 
@@ -77,10 +93,17 @@ class RoundManager:
         total_players: int,
         player_names: dict[int, str],
         bot: Bot,
+        total_rounds: int = TOTAL_ROUNDS,
     ) -> None:
         text = self._format_round_message(round_number, letter)
 
-        msg = await bot.send_message(group_chat_id, text)
+        while True:
+            try:
+                msg = await bot.send_message(group_chat_id, text)
+                break
+            except TelegramRetryAfter as e:
+                logger.warning("Flood al iniciar ronda, esperando %ss", e.retry_after)
+                await asyncio.sleep(e.retry_after)
 
         state = RoundState(
             game_id=game_id,
@@ -91,13 +114,19 @@ class RoundManager:
             message_chat_id=msg.chat.id,
             message_id=msg.message_id,
             total_players=total_players,
+            total_rounds=total_rounds,
             player_names=player_names,
         )
 
-        state.timer_task = asyncio.create_task(
-            self._round_timer(state, bot)
-        )
+        state.timer_task = asyncio.create_task(self._round_timer(state, bot))
         self._rounds[game_id] = state
+        self._rounds_by_group[group_chat_id] = game_id
+        self._letter_pending.pop(game_id, None)
+        async with async_session_factory() as session:
+            repo = RoundRepository(session)
+            await repo.create_round(
+                game_id=game_id, round_number=round_number, letter=letter
+            )
         logger.info(
             "Ronda iniciada",
             extra=dict(
@@ -116,40 +145,56 @@ class RoundManager:
     ) -> bool:
         state = self.get_active_round(game_id)
         if not state:
+            logger.info("submit_answers: no active round for game %s", game_id)
             return False
 
         parsed = parse_answers(text, state.categories)
         if not parsed:
+            logger.info("submit_answers: no categories parsed from text")
             return False
 
-        async with async_session_factory() as session:
-            repo = RoundRepository(session)
-            db_round = await repo.get_active_round(game_id)
-            if not db_round:
-                return False
-            await repo.save_answers(
-                round_id=db_round.id,
-                game_id=game_id,
-                player_id=player.id,
-                answers=parsed,
-            )
+        try:
+            async with async_session_factory() as session:
+                repo = RoundRepository(session)
+                db_round = await repo.get_active_round(game_id)
+                if not db_round:
+                    logger.info("submit_answers: no active round in DB for game %s", game_id)
+                    return False
+                await repo.save_answers(
+                    round_id=db_round.id,
+                    game_id=game_id,
+                    player_id=player.id,
+                    answers=parsed,
+                )
+        except Exception:
+            logger.exception("Error al guardar respuestas en DB")
+            return False
 
-        state.submitted_player_ids.add(player.telegram_id)
-        self._update_round_message(state, bot)
+        if game_id not in self._locks:
+            self._locks[game_id] = asyncio.Lock()
 
-        all_filled = len(parsed) == len(state.categories)
+        async with self._locks[game_id]:
+            state.submitted_player_ids.add(player.telegram_id)
+            self._debounced_update(state, bot)
 
-        if all_filled:
-            state.complete_player_ids.add(player.telegram_id)
+            all_filled = len(parsed) == len(state.categories)
+            logger.info("submit_answers: categories=%s parsed=%s all_filled=%s", len(state.categories), len(parsed), all_filled)
 
-            if state.first_completer_id is None:
-                state.first_completer_id = player.telegram_id
-                name = player.first_name or player.username or f"ID{player.telegram_id}"
-                state.first_completer_name = name
+            if all_filled:
+                state.complete_player_ids.add(player.telegram_id)
 
-                await self._send_stop_message(state, bot)
+                if state.first_completer_id is None:
+                    state.first_completer_id = player.telegram_id
+                    state.first_completer_db_id = player.id
+                    name = player.first_name or player.username or f"ID{player.telegram_id}"
+                    state.first_completer_name = name
 
-        await self._check_all_submitted(state, bot)
+                    logger.info("Enviando botón Stop para game %s, player %s", game_id, player.telegram_id)
+                    await self._send_stop_message(state, bot)
+                else:
+                    logger.info("first_completer_id ya era %s, no se envía otro Stop", state.first_completer_id)
+
+            await self._check_all_submitted(state, bot)
         return all_filled and state.first_completer_id == player.telegram_id
 
     async def press_stop(
@@ -174,14 +219,20 @@ class RoundManager:
         state.stop_presses += 1
 
         if state.stop_presses >= NUM_STOP_BUTTONS:
+            try:
+                await bot.edit_message_text(
+                    self._format_stop_message(NUM_STOP_BUTTONS),
+                    chat_id=state.stop_message_chat_id,
+                    message_id=state.stop_message_id,
+                )
+            except (TelegramBadRequest, TelegramRetryAfter):
+                pass
             await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
             await self._close_round(game_id, "stop", bot)
             return
 
         progress = state.stop_presses
-        await callback.answer(
-            f"⏹ Stop {progress}/{NUM_STOP_BUTTONS}", show_alert=False
-        )
+        await callback.answer(f"⏹ Stop {progress}/{NUM_STOP_BUTTONS}", show_alert=False)
 
         try:
             await bot.edit_message_text(
@@ -190,7 +241,7 @@ class RoundManager:
                 message_id=state.stop_message_id,
                 reply_markup=stop_keyboard(game_id, progress + 1),
             )
-        except TelegramBadRequest:
+        except (TelegramBadRequest, TelegramRetryAfter):
             pass
 
     async def _close_round(
@@ -203,84 +254,115 @@ class RoundManager:
         if not state:
             return
 
-        if state.timer_task and not state.timer_task.done():
-            state.timer_task.cancel()
-
-        reason_texts = {
-            "stop": "⏹ <b>Ronda detenida</b>",
-            "timeout": "⌛ <b>Tiempo agotado</b>",
-            "all_submitted": "✅ <b>¡Todos respondieron!</b>",
-        }
-        reason_text = reason_texts.get(reason, "⏹ <b>Ronda cerrada</b>")
-
-        async with async_session_factory() as session:
-            repo = RoundRepository(session)
-            db_round = await repo.get_active_round(game_id)
-            if db_round:
-                stopped_by = None
-                if reason == "stop" and state.first_completer_id:
-                    stopped_by = state.first_completer_id
-                await repo.update_status(
-                    db_round.id,
-                    status="completed",
-                    stopped_by_player_id=stopped_by,
-                )
-
         try:
-            await bot.edit_message_text(
-                f"{reason_text}\n\n"
-                f"<b>Ronda {state.round_number}</b> — Letra: <b>{state.letter}</b>\n\n"
-                f"<i>Calculando puntuaciones...</i>",
-                chat_id=state.message_chat_id,
-                message_id=state.message_id,
-            )
-        except TelegramBadRequest:
-            pass
+            if state.timer_task and not state.timer_task.done():
+                state.timer_task.cancel()
 
-        if state.stop_message_id:
+            if state.letter_timeout_task and not state.letter_timeout_task.done():
+                state.letter_timeout_task.cancel()
+                state.letter_timeout_task = None
+
+            self._rounds_by_group.pop(state.group_chat_id, None)
+
+            reason_texts = {
+                "stop": "⏹ <b>Ronda detenida</b>",
+                "timeout": "⌛ <b>Tiempo agotado</b>",
+                "all_submitted": "✅ <b>¡Todos respondieron!</b>",
+            }
+            reason_text = reason_texts.get(reason, "⏹ <b>Ronda cerrada</b>")
+
+            round_id: Optional[int] = None
+            async with async_session_factory() as session:
+                repo = RoundRepository(session)
+                db_round = await repo.get_active_round(game_id)
+                if db_round:
+                    round_id = db_round.id
+                    stopped_by = None
+                    if reason == "stop" and state.first_completer_db_id:
+                        stopped_by = state.first_completer_db_id
+                    await repo.update_status(
+                        db_round.id,
+                        status="completed",
+                        stopped_by_player_id=stopped_by,
+                    )
+
             try:
                 await bot.edit_message_text(
-                    f"{reason_text}\n\nLa ronda ha finalizado.",
-                    chat_id=state.stop_message_chat_id,
-                    message_id=state.stop_message_id,
+                    f"{reason_text}\n\n"
+                    f"<b>Ronda {state.round_number}</b> — Letra: <b>{state.letter}</b>\n\n"
+                    f"<i>Calculando puntuaciones...</i>",
+                    chat_id=state.message_chat_id,
+                    message_id=state.message_id,
                 )
             except TelegramBadRequest:
                 pass
+            except TelegramRetryAfter as e:
+                await asyncio.sleep(e.retry_after)
 
-        summary = await self._build_summary(game_id, state)
-        await bot.send_message(state.group_chat_id, summary)
+            if state.stop_message_id:
+                try:
+                    await bot.edit_message_text(
+                        f"{reason_text}\n\nLa ronda ha finalizado.",
+                        chat_id=state.stop_message_chat_id,
+                        message_id=state.stop_message_id,
+                    )
+                except TelegramBadRequest:
+                    pass
+                except TelegramRetryAfter as e:
+                    await asyncio.sleep(e.retry_after)
 
-        await self._transition_next_round(state, bot)
+            summary = await self._build_summary(round_id, state)
+            while True:
+                try:
+                    await bot.send_message(state.group_chat_id, summary)
+                    break
+                except TelegramRetryAfter as e:
+                    await asyncio.sleep(e.retry_after)
+
+            self._letter_pending[game_id] = state
+            await self._transition_next_round(state, bot)
+        except Exception:
+            logger.exception("Error en _close_round para game %s", game_id)
 
     async def _transition_next_round(
         self,
         state: RoundState,
         bot: Bot,
     ) -> None:
-        if state.round_number >= TOTAL_ROUNDS:
+        if state.round_number >= state.total_rounds:
             await self._end_game(state, bot)
             return
 
-        leader_id = await self._get_leader_telegram_id(state.game_id)
+        leader_id = state.first_completer_id
         if not leader_id:
-            leader_id = state.first_completer_id
+            leader_id = await self._get_leader_telegram_id(state.game_id)
         if not leader_id:
             await self._start_next_round_with_random(state, bot)
             return
 
+        state.leader_id = leader_id
         name = state.player_names.get(leader_id, "El líder")
-        msg = await bot.send_message(
-            state.group_chat_id,
-            f"🏆 <b>{name}, elige la letra de la siguiente ronda:</b>",
-            reply_markup=letter_keyboard(state.game_id),
-        )
-        asyncio.create_task(self._letter_timeout(msg, bot, state))
+        await asyncio.sleep(1)
+        while True:
+            try:
+                msg = await bot.send_message(
+                    state.group_chat_id,
+                    f"🏆 <b>{name}, elige la letra de la siguiente ronda:</b>",
+                    reply_markup=letter_keyboard(state.game_id),
+                )
+                break
+            except TelegramRetryAfter as e:
+                logger.warning("Flood al enviar teclado letras, esperando %ss", e.retry_after)
+                await asyncio.sleep(e.retry_after)
+        if state.letter_timeout_task and not state.letter_timeout_task.done():
+            state.letter_timeout_task.cancel()
+        state.letter_timeout_task = asyncio.create_task(self._letter_timeout(msg, bot, state))
 
     async def _letter_timeout(self, msg, bot, state):
         await asyncio.sleep(15)
         try:
             await msg.delete()
-        except TelegramBadRequest:
+        except (TelegramBadRequest, TelegramRetryAfter):
             pass
         letter = random.choice(ALPHABET)
         await self._start_next_round_with_letter(state, letter, bot)
@@ -293,10 +375,18 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
-        state = self._rounds.get(game_id)
+        state = self._rounds.get(game_id) or self._letter_pending.get(game_id)
         if not state:
             await callback.answer("❌ Partida no activa.", show_alert=True)
             return
+
+        if player_id != state.leader_id:
+            await callback.answer("❌ Solo el líder puede elegir la letra.", show_alert=True)
+            return
+
+        if state.letter_timeout_task and not state.letter_timeout_task.done():
+            state.letter_timeout_task.cancel()
+            state.letter_timeout_task = None
 
         next_number = state.round_number + 1
 
@@ -304,8 +394,7 @@ class RoundManager:
 
         countdown = await bot.send_message(
             state.group_chat_id,
-            f"<b>Letra: {letter}</b>\n"
-            f"⏱ Siguiente ronda en 5 segundos...",
+            f"<b>Letra: {letter}</b>\n⏱ Siguiente ronda en 5 segundos...",
         )
         await asyncio.sleep(5)
         try:
@@ -319,6 +408,7 @@ class RoundManager:
             round_number=next_number,
             letter=letter,
             total_players=state.total_players,
+            total_rounds=state.total_rounds,
             player_names=state.player_names,
             bot=bot,
         )
@@ -335,6 +425,7 @@ class RoundManager:
             round_number=prev_state.round_number + 1,
             letter=letter,
             total_players=prev_state.total_players,
+            total_rounds=prev_state.total_rounds,
             player_names=prev_state.player_names,
             bot=bot,
         )
@@ -359,32 +450,45 @@ class RoundManager:
         lines.append("")
         lines.append("<i>Gracias por jugar 🛑 Stop!</i>")
         await bot.send_message(state.group_chat_id, "\n".join(lines))
+        self._letter_pending.pop(state.game_id, None)
+        self._rounds_by_group.pop(state.group_chat_id, None)
 
     async def _check_all_submitted(self, state: RoundState, bot: Bot) -> None:
         if len(state.submitted_player_ids) >= state.total_players:
-            await asyncio.sleep(0.5)
-            asyncio.create_task(
-                self._close_round(state.game_id, "all_submitted", bot)
-            )
+            await self._close_round(state.game_id, "all_submitted", bot)
 
     async def _send_stop_message(self, state: RoundState, bot: Bot) -> None:
-        text = self._format_stop_message(0)
-        stop_msg = await bot.send_message(
-            state.first_completer_id,
-            text,
-            reply_markup=stop_keyboard(state.game_id, 1),
+        name = state.first_completer_name or "Alguien"
+        text = (
+            f"⏹ <b>{name} completó todas las categorías</b>\n\n"
+            f"Solo {name} puede presionar el botón Stop."
         )
-        state.stop_message_chat_id = stop_msg.chat.id
-        state.stop_message_id = stop_msg.message_id
+        while True:
+            try:
+                stop_msg = await bot.send_message(
+                    state.group_chat_id,
+                    text,
+                    reply_markup=stop_keyboard(state.game_id, 1),
+                )
+                state.stop_message_chat_id = stop_msg.chat.id
+                state.stop_message_id = stop_msg.message_id
+                logger.info("Botón Stop enviado a group_chat_id=%s msg_id=%s", state.group_chat_id, stop_msg.message_id)
+                break
+            except TelegramRetryAfter as e:
+                logger.warning("Flood control en stop msg, esperando %ss", e.retry_after)
+                await asyncio.sleep(e.retry_after)
+            except Exception:
+                logger.exception("Error al enviar botón Stop a group_chat_id=%s", state.group_chat_id)
+                break
 
-        self._update_round_message(state, bot)
+        self._debounced_update(state, bot)
 
-    def _update_round_message(self, state: RoundState, bot: Bot) -> None:
-        asyncio.create_task(self._do_update_round_message(state, bot))
+    def _debounced_update(self, state: RoundState, bot: Bot) -> None:
+        if state.update_task and not state.update_task.done():
+            state.update_task.cancel()
+        state.update_task = asyncio.create_task(self._do_update_round_message(state, bot))
 
-    async def _do_update_round_message(
-        self, state: RoundState, bot: Bot
-    ) -> None:
+    async def _do_update_round_message(self, state: RoundState, bot: Bot) -> None:
         lines = [self._format_round_message(state.round_number, state.letter)]
 
         if state.submitted_player_ids:
@@ -399,9 +503,7 @@ class RoundManager:
             name = state.first_completer_name or "Alguien"
             lines.append("")
             lines.append(f"⏹ <b>{name} completó todas las categorías</b>")
-            lines.append(
-                f"  Stop: {state.stop_presses}/{NUM_STOP_BUTTONS}"
-            )
+            lines.append(f"  Stop: {state.stop_presses}/{NUM_STOP_BUTTONS}")
 
         try:
             await bot.edit_message_text(
@@ -411,17 +513,27 @@ class RoundManager:
             )
         except TelegramBadRequest:
             pass
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
 
     async def _build_summary(
-        self, game_id: int, state: RoundState
+        self, round_id: Optional[int], state: RoundState
     ) -> str:
+        if round_id is None:
+            return (
+                f"<b>📊 Ronda {state.round_number} — Resumen</b>\n"
+                f"No se pudieron recuperar las respuestas."
+            )
+
         async with async_session_factory() as session:
             repo = RoundRepository(session)
-            db_round = await repo.get_active_round(game_id)
-            if db_round:
-                await repo.update_status(db_round.id, "scored")
-            all_rounds_answers = await repo.get_answers_by_player(
-                db_round.id if db_round else 0
+            all_rounds_answers = await repo.get_answers_by_player(round_id)
+
+            engine = ScoreEngine()
+            scores = engine.calculate(
+                all_rounds_answers,
+                len(state.categories),
+                first_completer_id=state.first_completer_id,
             )
 
         lines = [
@@ -430,21 +542,9 @@ class RoundManager:
             "",
         ]
 
-        scores = {}
-        for pid, answers in all_rounds_answers.items():
-            filled = sum(1 for a in answers if a.raw_text.strip())
-            scores[pid] = filled
-
-        for pid, score in sorted(
-            scores.items(), key=lambda x: x[1], reverse=True
-        ):
-            name = state.player_names.get(
-                pid, f"Jugador {pid}"
-            )
-            total = len(state.categories)
-            lines.append(
-                f"  {name}: {score}/{total} categorías"
-            )
+        for pid, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+            name = state.player_names.get(pid, f"Jugador {pid}")
+            lines.append(f"  {name}: {score} pts")
 
         if state.first_completer_name:
             lines.append("")
@@ -470,9 +570,7 @@ class RoundManager:
                 return row.Player.telegram_id
             return None
 
-    async def _get_standings(
-        self, game_id: int
-    ) -> list[tuple[int, int]]:
+    async def _get_standings(self, game_id: int) -> list[tuple[int, int]]:
         async with async_session_factory() as session:
             stmt = (
                 select(GamePlayer, Player)
@@ -520,8 +618,13 @@ def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
     for match in ANSWER_REGEX.finditer(text):
         raw_cat = match.group(1).strip().lower()
         value = match.group(2).strip()
+        if not value:
+            continue
         if raw_cat in cat_map:
-            result[cat_map[raw_cat]] = value
+            canonical = cat_map[raw_cat]
+            if canonical in result:
+                logger.warning("Categoría duplicada '%s' en respuestas, se sobrescribe", canonical)
+            result[canonical] = value
 
     return result
 

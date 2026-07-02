@@ -6,14 +6,14 @@ from typing import Optional
 
 from aiogram import Bot
 from sqlalchemy import select
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import CallbackQuery
 
 from src.db.engine import async_session_factory
-from src.db.models import GamePlayer, Player
+from src.db.models import Game, GamePlayer, Player
 from src.db.repositories import GameRepository
 from src.keyboards.lobby import lobby_keyboard
-from src.services.round_manager import round_manager
+from src.services.round_manager import round_manager, TOTAL_ROUNDS, ALPHABET
 
 
 MAX_PLAYERS = 10
@@ -41,6 +41,7 @@ class LobbyState:
     expire_task: Optional[asyncio.Task] = None
     animation_task: Optional[asyncio.Task] = None
     auto_start_task: Optional[asyncio.Task] = None
+    started: bool = False
 
 
 class LobbyManager:
@@ -240,6 +241,21 @@ class LobbyManager:
                 )
             except TelegramBadRequest:
                 pass
+
+            async with async_session_factory() as session:
+                repo = GameRepository(session)
+                db_game = await repo.get_by_id(state.game_id)
+                if db_game and db_game.status == STATUS_LOBBY:
+                    await repo.update_game_status(db_game, STATUS_CANCELLED)
+
+            try:
+                await bot.send_message(
+                    state.group_chat_id,
+                    "⌛ <b>Lobby cerrado por inactividad.</b>",
+                )
+            except (TelegramBadRequest, TelegramForbiddenError):
+                pass
+
             self._cleanup(state)
         except asyncio.CancelledError:
             pass
@@ -267,18 +283,28 @@ class LobbyManager:
                         message_id=state.message_id,
                         reply_markup=keyboard,
                     )
-                except TelegramBadRequest as e:
+                except (TelegramBadRequest, TelegramForbiddenError) as e:
                     logger.warning("Error editando el mensaje lobby", error=e)
         except asyncio.CancelledError:
             pass
 
-    # --- Iniciar partida -------------------------------------------------------
-    async def _do_start(self, state: LobbyState, bot: Bot) -> None:
+    # --- Limpieza global --------------------------------------------------------
+    @staticmethod
+    async def cleanup_stale_games() -> None:
+        logger.info("Limpiando partidas huerfanas...")
         async with async_session_factory() as session:
             repo = GameRepository(session)
-            db_game = await repo.get_by_id(state.game_id)
-            if db_game:
-                await repo.update_game_status(db_game, STATUS_PLAYING)
+            stale = await repo.get_stale_games()
+            for game in stale:
+                await repo.update_game_status(game, STATUS_CANCELLED)
+                logger.info("Partida %s cancelada por stale", game.id)
+
+    # --- Iniciar partida -------------------------------------------------------
+    async def _do_start(self, state: LobbyState, bot: Bot) -> None:
+        if state.started:
+            logger.warning("_do_start llamado múltiples veces para game %s", state.game_id)
+            return
+        state.started = True
 
         self._cleanup(state)
 
@@ -304,7 +330,16 @@ class LobbyManager:
             f"<i>Preparando ronda 1...</i>",
         )
 
-        letter = random.choice(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        async with async_session_factory() as session:
+            repo = GameRepository(session)
+            db_game = await repo.get_by_id(state.game_id)
+            if db_game:
+                db_game.current_round = 1
+                await repo.update_game_status(db_game, STATUS_PLAYING)
+
+        letter = random.choice(ALPHABET)
+
+        total_rounds = db_game.total_rounds if db_game else TOTAL_ROUNDS
 
         await round_manager.start_round(
             game_id=state.game_id,
@@ -312,6 +347,7 @@ class LobbyManager:
             round_number=1,
             letter=letter,
             total_players=len(state.player_telegram_ids),
+            total_rounds=total_rounds,
             player_names=player_names,
             bot=bot,
         )
@@ -347,3 +383,4 @@ class LobbyManager:
 
 # Singleton
 lobby_manager = LobbyManager()
+game_orchestrator = lobby_manager
