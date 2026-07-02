@@ -154,8 +154,13 @@ class TestRoundManagerQueries:
 
     def test_get_active_round_after_setup(self, fresh_round_manager):
         state = RoundState(
-            game_id=1, group_chat_id=-100, round_number=1, letter="A",
-            categories=CATEGORIES, message_chat_id=-100, message_id=42,
+            game_id=1,
+            group_chat_id=-100,
+            round_number=1,
+            letter="A",
+            categories=CATEGORIES,
+            message_chat_id=-100,
+            message_id=42,
             total_players=2,
         )
         fresh_round_manager._rounds[1] = state
@@ -164,13 +169,23 @@ class TestRoundManagerQueries:
 
     def test_get_active_round_by_group_with_multiple(self, fresh_round_manager):
         s1 = RoundState(
-            game_id=1, group_chat_id=-1, round_number=1, letter="A",
-            categories=CATEGORIES, message_chat_id=-1, message_id=1,
+            game_id=1,
+            group_chat_id=-1,
+            round_number=1,
+            letter="A",
+            categories=CATEGORIES,
+            message_chat_id=-1,
+            message_id=1,
             total_players=2,
         )
         s2 = RoundState(
-            game_id=2, group_chat_id=-2, round_number=1, letter="B",
-            categories=CATEGORIES, message_chat_id=-2, message_id=2,
+            game_id=2,
+            group_chat_id=-2,
+            round_number=1,
+            letter="B",
+            categories=CATEGORIES,
+            message_chat_id=-2,
+            message_id=2,
             total_players=2,
         )
         fresh_round_manager._rounds[1] = s1
@@ -221,16 +236,26 @@ class TestStartRound:
         bot.send_message.return_value = msg
 
         await fresh_round_manager.start_round(
-            game_id=1, group_chat_id=-100, round_number=1, letter="A",
-            total_players=2, player_names={111: "A"}, bot=bot,
+            game_id=1,
+            group_chat_id=-100,
+            round_number=1,
+            letter="A",
+            total_players=2,
+            player_names={111: "A"},
+            bot=bot,
         )
 
         old_state = fresh_round_manager.get_active_round(1)
         old_timer = old_state.timer_task
 
         await fresh_round_manager.start_round(
-            game_id=1, group_chat_id=-100, round_number=2, letter="B",
-            total_players=2, player_names={111: "A"}, bot=bot,
+            game_id=1,
+            group_chat_id=-100,
+            round_number=2,
+            letter="B",
+            total_players=2,
+            player_names={111: "A"},
+            bot=bot,
         )
 
         new_state = fresh_round_manager.get_active_round(1)
@@ -267,8 +292,13 @@ class TestSubmitAnswers:
         bot.send_message.return_value = msg
 
         await fresh_round_manager.start_round(
-            game_id=1, group_chat_id=-100, round_number=1, letter="A",
-            total_players=2, player_names={111: "Alice"}, bot=bot,
+            game_id=1,
+            group_chat_id=-100,
+            round_number=1,
+            letter="A",
+            total_players=2,
+            player_names={111: "Alice"},
+            bot=bot,
         )
 
         state = fresh_round_manager.get_active_round(1)
@@ -284,7 +314,10 @@ class TestSubmitAnswers:
         player.first_name = "Alice"
 
         result = await fresh_round_manager.submit_answers(
-            game_id=1, player=player, text="some random text", bot=bot,
+            game_id=1,
+            player=player,
+            text="some random text",
+            bot=bot,
         )
         assert result is False
 
@@ -294,7 +327,10 @@ class TestPressStop:
     async def test_press_stop_no_active_round(self, fresh_round_manager):
         callback = AsyncMock()
         await fresh_round_manager.press_stop(
-            game_id=1, player_id=111, callback=callback, bot=AsyncMock(),
+            game_id=1,
+            player_id=111,
+            callback=callback,
+            bot=AsyncMock(),
         )
         callback.answer.assert_awaited_with(
             "❌ Esta ronda ya terminó.", show_alert=True
@@ -309,8 +345,13 @@ class TestPressStop:
         bot.send_message.return_value = msg
 
         await fresh_round_manager.start_round(
-            game_id=1, group_chat_id=-100, round_number=1, letter="A",
-            total_players=2, player_names={111: "Alice", 222: "Bob"}, bot=bot,
+            game_id=1,
+            group_chat_id=-100,
+            round_number=1,
+            letter="A",
+            total_players=2,
+            player_names={111: "Alice", 222: "Bob"},
+            bot=bot,
         )
 
         state = fresh_round_manager.get_active_round(1)
@@ -323,7 +364,10 @@ class TestPressStop:
 
         callback = AsyncMock()
         await fresh_round_manager.press_stop(
-            game_id=1, player_id=222, callback=callback, bot=bot,
+            game_id=1,
+            player_id=222,
+            callback=callback,
+            bot=bot,
         )
         callback.answer.assert_awaited_with(
             "❌ Solo puedes usar Stop si completaste todas las categorías.",
@@ -335,6 +379,7 @@ class TestCloseRound:
     @pytest.mark.asyncio
     async def test_close_round_removes_state(self, fresh_round_manager):
         import sys
+
         rm_mod = sys.modules["src.services.round_manager"]
 
         bot = AsyncMock()
@@ -344,8 +389,13 @@ class TestCloseRound:
         bot.send_message.return_value = msg
 
         await fresh_round_manager.start_round(
-            game_id=1, group_chat_id=-100, round_number=1, letter="A",
-            total_players=1, player_names={111: "Alice"}, bot=bot,
+            game_id=1,
+            group_chat_id=-100,
+            round_number=1,
+            letter="A",
+            total_players=1,
+            player_names={111: "Alice"},
+            bot=bot,
         )
 
         state = fresh_round_manager.get_active_round(1)
@@ -360,6 +410,7 @@ class TestCloseRound:
             mock_repo = AsyncMock()
             mock_repo.get_active_round.return_value = mock_db_round
             mock_repo.get_answers_by_player = AsyncMock(return_value={})
+            mock_repo.get_game_player_by_telegram = AsyncMock(return_value=None)
             mock_repo_cls.return_value = mock_repo
             await fresh_round_manager._close_round(1, "stop", bot)
 
@@ -368,6 +419,7 @@ class TestCloseRound:
     @pytest.mark.asyncio
     async def test_close_round_cancels_timer(self, fresh_round_manager):
         import sys
+
         rm_mod = sys.modules["src.services.round_manager"]
 
         bot = AsyncMock()
@@ -381,8 +433,13 @@ class TestCloseRound:
         fresh_round_manager._start_next_round_with_random = AsyncMock()
 
         await fresh_round_manager.start_round(
-            game_id=1, group_chat_id=-100, round_number=1, letter="A",
-            total_players=1, player_names={111: "Alice"}, bot=bot,
+            game_id=1,
+            group_chat_id=-100,
+            round_number=1,
+            letter="A",
+            total_players=1,
+            player_names={111: "Alice"},
+            bot=bot,
         )
 
         state = fresh_round_manager.get_active_round(1)
@@ -395,6 +452,7 @@ class TestCloseRound:
             mock_repo = AsyncMock()
             mock_repo.get_active_round.return_value = mock_db_round
             mock_repo.get_answers_by_player = AsyncMock(return_value={})
+            mock_repo.get_game_player_by_telegram = AsyncMock(return_value=None)
             mock_repo_cls.return_value = mock_repo
             await fresh_round_manager._close_round(1, "stop", bot)
 

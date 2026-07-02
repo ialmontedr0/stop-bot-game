@@ -133,72 +133,9 @@ ESTADO DE LA FASE: LISTA (ver el phase1-guide.md)
 
 **Entregable:** Ronda completa con temporizador, envío de respuestas, Stop y transición.
 
-ESTADO DE LA FASE: 
+ESTADO DE LA FASE: LISTA (ver phase2-guide.md)
 
 ---
-
-Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
-
-Fase 2 — Ciclo de ronda: letra, envío, Stop y evaluación
-
-**Objetivo:** Núcleo del juego — rondas completas con temporizador, Stop, y puntuación.
-
-### Tareas
-
-- [ ] 2.1 **Selección de letra (primera ronda):**
-  - Random con `random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")`.
-  - Excluir Ñ (o incluirla según región configurable).
-
-- [ ] 2.2 **Temporizador de ronda:** 60s controlado con `asyncio.create_task` + `Redis` expiry como fallback.
-
-- [ ] 2.3 **Plantilla de categorías** (8-12 fijas, ej.):
-  - Nombre, País/Ciudad, Animal, Comida, Objeto, Profesión, Deporte, Color, Marca, Verbo, Película, Planta.
-
-- [ ] 2.4 Bot envía mensaje formateado con la letra y las categorías:
-  ```
-  🛑 Ronda 1 — Letra: **F**
-  ⏱ 60 segundos
-
-  Envía tus respuestas en este formato:
-  Nombre:
-  Apellido:
-  Color:
-  Fruta:
-  País:
-  Artista:
-  Novela/Serie:
-  Cosa:
-
-  ...
-  ```
-- [ ] 2.5 **Parser de respuestas:**
-  - Regex que extrae `categoría: valor`.
-  - Ignora mayúsculas/minúsculas, espacios extra.
-  - Devuelve `dict[Categoría, str]`.
-
-- [ ] 2.6 **Normalización y fuzzy matching** (ver Fase 4): en esta fase solo guardamos raw_text.
-
-- [ ] 2.7 **Sistema Stop:**
-  - Cuando el primer jugador envía una respuesta **completa** (todas las categorías rellenas) → el bot le da la opcion de hacer **«⏹ Stop»** con un boton.
-  - Otros jugadores NO pueden usar este.
-  - Timeout del botón: 5s.
-  - Al pulsar Stop 1 → desaparece el boton de Stop 1 -> aparece el boton de Stop 2 -> Al pulsar Stop 2 -> desaparece el boton de Stop 2 -> aparece el boton de Stop -> Asi sucesivamente hasta agotar los 10 botones de Stop. En caso de que todos los participantes envien sus respuestas el bot deja de mostrar el boton de Stop [N] al usuario que envio su respuesta completa de primero y la ronda se cierra inmediatamente.
-  - Si nadie hace Stop → la ronda termina a los 60s.
-
-- [ ] 2.8 **Cierre de ronda:**
-  - Bot edita el mensaje del grupo: `"⏹ Ronda detenida"` o `"⌛ Tiempo agotado"`.
-  - Llama al `ScoreEngine` (Fase 3).
-
-- [ ] 2.9 **Mostrar puntuación parcial:** Bot envía resumen de puntos de la ronda.
-
-- [ ] 2.10 **Transición a siguiente ronda:**
-  - El líder (máximo puntaje acumulado) recibe inline keyboard con el alfabeto.
-  - Selecciona letra → 5s countdown → nueva ronda.
-  - Si hay empate, elige el primero en llegar a esa posición.
-
-**Entregable:** Ronda completa con temporizador, envío de respuestas, Stop y transición.
-
-Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 
 ## Fase 3 — Motor de puntuación (Score Engine)
@@ -229,7 +166,8 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
 
 **Entregable:** Puntuación correcta con duplicados, bonus y resumen.
 
----
+ESTADO DE LA FASE: EN GUIA (ver phase3-guide.md)
+
 
 ## Fase 4 — Corrector ortográfico con IA / Fuzzy Matching
 
@@ -241,26 +179,37 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
   1. Strip, lower, eliminar tildes (transliteración básica: `á → a`).
   2. Eliminar signos de puntuación redundantes.
   3. Tokenizar.
+
 - [ ] 4.2 **Fuzzy matching entre respuestas de la misma categoría:**
   - Usar `rapidfuzz` (Levenshtein ratio): si `ratio >= 0.75` → considerar misma palabra.
   - Ej: `Fernando`, `Fenando`, `FERNANDO`, `felnando` → misma respuesta.
+
 - [ ] 4.3 **Corrección ortográfica por palabra (opcional, nivel IA):**
   - `spaCy` + `symspellpy` para sugerir la palabra canónica.
   - O llamada a OpenAI / Gemini API: `"Corrige esta palabra al español correcto: {word}"`.
   - Cache en Redis de `{raw: corrected}` para evitar llamadas repetidas.
+
 - [ ] 4.4 **Validación semántica:**
   - ¿La palabra pertenece realmente a la categoría?
   - Opción A: Usar LLM (`"¿'{word}' es un {categoria}? Responde solo sí o no"`).
   - Opción B: Lista de palabras conocidas por categoría (seed inicial + grow).
+
 - [ ] 4.5 **Modo híbrido:**
   - Intentar fuzzy matching local primero.
   - Si match < 0.75, caer en LLM para corrección.
   - Configurable por variable de entorno: `SPELL_MODE=local|ai|hybrid`.
+  
 - [ ] 4.6 Límite por ronda de llamadas a API externa para control de costes.
 
 **Entregable:** Respuestas corregidas y normalizadas; duplicados detectados fuzzy.
 
+ESTADO DE LA FASE: 
 ---
+
+Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
+
+
+Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Fase 5 — Configuración de partida y persistencia
 

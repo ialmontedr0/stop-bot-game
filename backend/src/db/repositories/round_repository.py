@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.db.models import Answer, GamePlayer, Round
+from src.db.models import Answer, GamePlayer, Player, Round
 
 from .base import BaseRepository
 
@@ -69,7 +69,9 @@ class RoundRepository(BaseRepository[Round]):
         )
         gp = (await self.session.execute(stmt)).scalar_one_or_none()
         if not gp:
-            raise ValueError(f"GamePlayer not found for game={game_id} player={player_id}")
+            raise ValueError(
+                f"GamePlayer not found for game={game_id} player={player_id}"
+            )
 
         old = await self.session.execute(
             select(Answer).where(
@@ -97,9 +99,7 @@ class RoundRepository(BaseRepository[Round]):
             await self.session.refresh(a)
         return result
 
-    async def get_answers_by_player(
-        self, round_id: int
-    ) -> dict[int, list[Answer]]:
+    async def get_answers_by_player(self, round_id: int) -> dict[int, list[Answer]]:
         stmt = (
             select(Answer)
             .options(selectinload(Answer.player))
@@ -116,3 +116,25 @@ class RoundRepository(BaseRepository[Round]):
         stmt = select(Round).where(Round.game_id == game_id)
         result = await self.session.execute(stmt)
         return len(result.scalars().all())
+
+    async def update_answer_scores(
+        self,
+        answer_scores: list[tuple[int, bool, int]],
+    ) -> None:
+        for answer_id, is_correct, score in answer_scores:
+            ans = await self.session.get(Answer, answer_id)
+            if ans:
+                ans.is_correct = is_correct
+                ans.score = score
+        await self.session.flush()
+
+    async def get_game_player_by_telegram(
+        self, game_id: int, telegram_id: int
+    ) -> Optional[GamePlayer]:
+        stmt = (
+            select(GamePlayer)
+            .join(Player, GamePlayer.player_id == Player.id)
+            .where(GamePlayer.game_id == game_id, Player.telegram_id == telegram_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
