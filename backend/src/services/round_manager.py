@@ -40,6 +40,7 @@ CATEGORIES = [
 ]
 
 CATEGORIES_DISPLAY = "\n".join(f"  <b>{cat}:</b> ..." for cat in CATEGORIES)
+PLACEHOLDER = "\n".join(f"{cat}: ..." for cat in CATEGORIES)
 
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -74,6 +75,7 @@ class RoundState:
     player_names: dict[int, str] = field(default_factory=dict)
     inter_round_message_id: Optional[int] = None
     inter_round_timeout_task: Optional[asyncio.Task] = None
+    cancelled: bool = False
 
 
 class RoundManager:
@@ -373,6 +375,9 @@ class RoundManager:
                     await asyncio.sleep(e.retry_after)
 
             self._letter_pending[game_id] = state
+            if state.cancelled:
+                self._letter_pending.pop(game_id, None)
+                return
             await self._transition_next_round(state, bot)
         except (asyncio.CancelledError, Exception):
             logger.exception("Error en _close_round para game %s", game_id)
@@ -382,6 +387,8 @@ class RoundManager:
         state: RoundState,
         bot: Bot,
     ) -> None:
+        if state.cancelled:
+            return
         if state.round_number >= state.total_rounds:
             await self._end_game(state, bot)
             return
@@ -786,6 +793,35 @@ class RoundManager:
             lines.append(f"  🏎️ Bonus velocidad: +{FIRST_COMPLETER_BONUS} pts")
 
         return "\n".join(lines)
+
+    def cancel_game(self, game_id: int) -> None:
+        """Limpia todo el estado en memoria de una partida cancelada."""
+        state = self._rounds.pop(game_id, None)
+        if state:
+            state.cancelled = True
+            for task in (
+                state.timer_task,
+                state.letter_timeout_task,
+                state.update_task,
+                state.inter_round_timeout_task,
+            ):
+                if task and not task.done():
+                    task.cancel()
+            self._rounds_by_group.pop(state.group_chat_id, None)
+
+        pending = self._letter_pending.pop(game_id, None)
+        if pending and pending is not state:
+            pending.cancelled = True
+            for task in (
+                pending.letter_timeout_task,
+                pending.inter_round_timeout_task,
+            ):
+                if task and not task.done():
+                    task.cancel()
+            self._rounds_by_group.pop(pending.group_chat_id, None)
+
+        self._locks.pop(game_id, None)
+        logger.info("Estado en memoria cancelado para game %s", game_id)
 
     async def _get_leader_telegram_id(self, game_id: int) -> Optional[int]:
         async with async_session_factory() as session:

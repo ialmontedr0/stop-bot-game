@@ -13,7 +13,7 @@ from src.db.engine import async_session_factory
 from src.db.models import Game, GamePlayer, Player
 from src.db.repositories import GameRepository
 from src.keyboards.lobby import lobby_keyboard
-from src.services.round_manager import round_manager, TOTAL_ROUNDS, ALPHABET
+from src.services.round_manager import round_manager, TOTAL_ROUNDS, ALPHABET, PLACEHOLDER
 
 
 MAX_PLAYERS = 10
@@ -104,7 +104,28 @@ class LobbyManager:
         state.expire_task = asyncio.create_task(self._expire_timer(state, bot))
         state.animation_task = asyncio.create_task(self._animation_loop(state, bot))
         self._lobbies[group_chat_id] = state
+
+        await self._send_placeholder_dm(host_player, bot)
         return None
+
+    # --- DM placeholder ----------------------------------------------------
+    @staticmethod
+    async def _send_placeholder_dm(player: Player, bot: Bot) -> None:
+        try:
+            await bot.send_message(
+                player.telegram_id,
+                "🎮 Te has unido a una partida de Stop.\n\n"
+                "Cuando comience la ronda, el bot mostrará una letra. "
+                "Tienes 60 segundos para escribir una palabra con esa letra "
+                "en cada categoría.\n\n"
+                "Copia el siguiente mensaje y úsalo como plantilla:",
+            )
+            await bot.send_message(
+                player.telegram_id,
+                f"{PLACEHOLDER}",
+            )
+        except Exception:
+            logger.warning("No se pudo enviar DM a %s", player.telegram_id)
 
     # --- Unirse ------------------------------------------------------------
     async def join_lobby(
@@ -146,6 +167,8 @@ class LobbyManager:
         state.player_display_names.append(name)
 
         await callback.answer("✅ Te has unido a la partida", show_alert=False)
+
+        await self._send_placeholder_dm(player, bot)
 
         # Resetear auto-start si hay suficientes jugadores
         self._reset_auto_start(state, bot)
@@ -202,6 +225,8 @@ class LobbyManager:
                 return "❌ Solo el host puede cancelar la partida."
 
             await repo.update_game_status(db_game, STATUS_CANCELLED)
+
+        round_manager.cancel_game(db_game.id)
 
         if state:
             self._cleanup(state)

@@ -6,6 +6,7 @@ from aiogram.types import ChatMemberUpdated
 
 from src.db.engine import async_session_factory
 from src.db.repositories import GameRepository
+from src.services.round_manager import round_manager
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def bot_removed_from_group(event: ChatMemberUpdated, bot: Bot) -> None:
             game = await repo.get_active_game(event.chat.id)
             if game:
                 await repo.update_game_status(game, "cancelled")
+                round_manager.cancel_game(game.id)
                 logger.info("Partida %s cancelada al eliminar el bot", game.id)
     except Exception:
         logger.exception("Error al limpiar datos tras ser eliminado del grupo %s", event.chat.id)

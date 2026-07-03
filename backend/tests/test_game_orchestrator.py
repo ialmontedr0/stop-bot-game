@@ -151,7 +151,7 @@ class TestCreateLobby:
 
         assert result is None
         assert fresh_manager.has_lobby(-100)
-        mock_bot.send_message.assert_awaited_once()
+        assert mock_bot.send_message.await_count == 3  # lobby msg + DM intro + placeholder
 
     @patch("src.services.game_orchestrator.async_session_factory")
     @patch("src.services.game_orchestrator.GameRepository")
