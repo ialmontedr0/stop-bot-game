@@ -28,7 +28,10 @@ def mock_db():
         mock_scalars.all.return_value = []
         mock_result.scalars.return_value = mock_scalars
         mock_result.one_or_none.return_value = None
-        mock_session.execute.return_value = mock_result
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.flush = AsyncMock()
         m.return_value.__aenter__.return_value = mock_session
         yield
 
@@ -126,6 +129,7 @@ class TestRoundState:
             message_chat_id=-100,
             message_id=42,
             total_players=3,
+            host_telegram_id=111,
         )
         assert state.submitted_player_ids == set()
         assert state.complete_player_ids == set()
@@ -162,6 +166,7 @@ class TestRoundManagerQueries:
             message_chat_id=-100,
             message_id=42,
             total_players=2,
+            host_telegram_id=111,
         )
         fresh_round_manager._rounds[1] = state
         assert fresh_round_manager.get_active_round(1) is state
@@ -177,6 +182,7 @@ class TestRoundManagerQueries:
             message_chat_id=-1,
             message_id=1,
             total_players=2,
+            host_telegram_id=111,
         )
         s2 = RoundState(
             game_id=2,
@@ -187,6 +193,7 @@ class TestRoundManagerQueries:
             message_chat_id=-2,
             message_id=2,
             total_players=2,
+            host_telegram_id=222,
         )
         fresh_round_manager._rounds[1] = s1
         fresh_round_manager._rounds[2] = s2

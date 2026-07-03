@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 import re
+import unicodedata
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Optional
@@ -17,8 +18,9 @@ from src.db.engine import async_session_factory
 from src.db.models import Player, GamePlayer
 from src.db.repositories.game_repository import GameRepository
 from src.db.repositories.round_repository import RoundRepository
-from src.keyboards.round import stop_keyboard, letter_keyboard
+from src.keyboards.round import inter_round_keyboard, stop_keyboard, letter_keyboard
 from src.services.score_engine import FIRST_COMPLETER_BONUS, ScoreEngine
+from src.services.spell_corrector import get_corrector
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,10 @@ class RoundState:
     categories: list[str]
     message_chat_id: int
     message_id: int
+    host_telegram_id: int
     timer_task: Optional[asyncio.Task] = None
     submitted_player_ids: set[int] = field(default_factory=set)
+    submission_order: list[int] = field(default_factory=list)
     complete_player_ids: set[int] = field(default_factory=set)
     first_completer_id: Optional[int] = None
     first_completer_db_id: Optional[int] = None
@@ -65,7 +69,11 @@ class RoundState:
     total_rounds: int = TOTAL_ROUNDS
     stop_message_chat_id: Optional[int] = None
     stop_message_id: Optional[int] = None
+    letter_message_chat_id: Optional[int] = None
+    letter_message_id: Optional[int] = None
     player_names: dict[int, str] = field(default_factory=dict)
+    inter_round_message_id: Optional[int] = None
+    inter_round_timeout_task: Optional[asyncio.Task] = None
 
 
 class RoundManager:
@@ -98,6 +106,7 @@ class RoundManager:
         player_names: dict[int, str],
         bot: Bot,
         total_rounds: int = TOTAL_ROUNDS,
+        host_telegram_id: Optional[int] = None,
     ) -> None:
         text = self._format_round_message(round_number, letter)
 
@@ -120,6 +129,7 @@ class RoundManager:
             total_players=total_players,
             total_rounds=total_rounds,
             player_names=player_names,
+            host_telegram_id=host_telegram_id or 0,
         )
 
         state.timer_task = asyncio.create_task(self._round_timer(state, bot))
@@ -180,7 +190,10 @@ class RoundManager:
             self._locks[game_id] = asyncio.Lock()
 
         async with self._locks[game_id]:
+            is_first = player.telegram_id not in state.submitted_player_ids
             state.submitted_player_ids.add(player.telegram_id)
+            if is_first:
+                state.submission_order.append(player.telegram_id)
             self._debounced_update(state, bot)
 
             all_filled = len(parsed) == len(state.categories)
@@ -276,8 +289,11 @@ class RoundManager:
         if not state:
             return
 
+        logger.info("_close_round: game=%s reason=%s ronda=%s", game_id, reason, state.round_number)
+
         try:
-            if state.timer_task and not state.timer_task.done():
+            if state.timer_task and not state.timer_task.done() and reason != "timeout":
+                logger.info("_close_round: cancelando timer task de game %s", game_id)
                 state.timer_task.cancel()
 
             if state.letter_timeout_task and not state.letter_timeout_task.done():
@@ -308,8 +324,20 @@ class RoundManager:
                         stopped_by_player_id=stopped_by,
                     )
 
+            round_scores: dict[int, int] = {}
             if round_id is not None:
-                await self._persist_round_scores(round_id, state)
+                round_scores = await self._persist_round_scores(round_id, state)
+
+            if round_scores:
+                unique_scores = len(set(round_scores.values()))
+                if unique_scores == 1 and state.submission_order:
+                    # Todos empatados: el primero en responder es lider
+                    for pid in state.submission_order:
+                        if pid in round_scores:
+                            state.leader_id = pid
+                            break
+                else:
+                    state.leader_id = max(round_scores, key=round_scores.get)
 
             try:
                 await bot.edit_message_text(
@@ -336,7 +364,7 @@ class RoundManager:
                 except TelegramRetryAfter as e:
                     await asyncio.sleep(e.retry_after)
 
-            summary = await self._build_summary(round_id, state)
+            summary = self._build_summary(round_scores, state)
             while True:
                 try:
                     await bot.send_message(state.group_chat_id, summary)
@@ -346,7 +374,7 @@ class RoundManager:
 
             self._letter_pending[game_id] = state
             await self._transition_next_round(state, bot)
-        except Exception:
+        except (asyncio.CancelledError, Exception):
             logger.exception("Error en _close_round para game %s", game_id)
 
     async def _transition_next_round(
@@ -358,9 +386,100 @@ class RoundManager:
             await self._end_game(state, bot)
             return
 
-        leader_id = state.first_completer_id
-        if not leader_id:
-            leader_id = await self._get_leader_telegram_id(state.game_id)
+        await self._show_inter_round_menu(state, bot)
+
+    async def _show_inter_round_menu(self, state: RoundState, bot: Bot) -> None:
+        msg = await bot.send_message(
+            state.group_chat_id,
+            f"🔄 <b>Ronda {state.round_number} completada</b>\n\n"
+            f"⏱ La siguiente ronda comenzará automáticamente en 2 minutos.\n\n"
+            f"<b>Opciones:</b>\n"
+            f"  ▶️ <i>Siguiente ronda</i> — solo el líder puede avanzar\n"
+            f"  ⏹ <i>Detener partida</i> — solo el anfitrión puede finalizar",
+            reply_markup=inter_round_keyboard(state.game_id),
+        )
+        state.inter_round_message_id = msg.message_id
+        state.inter_round_timeout_task = asyncio.create_task(
+            self._inter_round_timeout(state, bot)
+        )
+
+    async def _inter_round_timeout(self, state: RoundState, bot: Bot) -> None:
+        await asyncio.sleep(120)
+        if state.inter_round_message_id:
+            try:
+                await bot.delete_message(
+                    state.group_chat_id, state.inter_round_message_id
+                )
+            except TelegramBadRequest:
+                pass
+        await self._prompt_letter_selection(state, bot)
+
+    async def handle_next_round(
+        self,
+        game_id: int,
+        player_id: int,
+        callback,
+        bot: Bot,
+    ) -> None:
+        state = self._letter_pending.get(game_id)
+        if not state:
+            await callback.answer("❌ No hay partida activa.", show_alert=True)
+            return
+        if player_id != state.leader_id:
+            await callback.answer(
+                "❌ Solo el líder puede avanzar a la siguiente ronda.",
+                show_alert=True,
+            )
+            return
+        if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
+            state.inter_round_timeout_task.cancel()
+        if state.inter_round_message_id:
+            try:
+                await bot.delete_message(
+                    state.group_chat_id, state.inter_round_message_id
+                )
+            except TelegramBadRequest:
+                pass
+        await callback.answer("▶️ Avanzando a la siguiente ronda...", show_alert=False)
+        await self._prompt_letter_selection(state, bot)
+
+    async def handle_stop_game(
+        self,
+        game_id: int,
+        player_id: int,
+        callback,
+        bot: Bot,
+    ) -> None:
+        state = self._letter_pending.get(game_id)
+        if not state:
+            await callback.answer("❌ No hay partida activa.", show_alert=True)
+            return
+        if player_id != state.host_telegram_id:
+            await callback.answer(
+                "❌ Solo el anfitrión puede detener la partida.",
+                show_alert=True,
+            )
+            return
+        if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
+            state.inter_round_timeout_task.cancel()
+        if state.inter_round_message_id:
+            try:
+                await bot.delete_message(
+                    state.group_chat_id, state.inter_round_message_id
+                )
+            except TelegramBadRequest:
+                pass
+        await callback.answer(
+            "⏹ Partida detenida. Calculando puntuaciones...", show_alert=False
+        )
+        await self._end_game(state, bot)
+
+    async def _prompt_letter_selection(self, state: RoundState, bot: Bot) -> None:
+        if state.first_completer_id:
+            leader_id = state.first_completer_id
+        else:
+            # Sin primer completador: usar el de mayor puntaje de esta ronda
+            leader_id = state.leader_id or await self._get_leader_telegram_id(state.game_id)
         if not leader_id:
             await self._start_next_round_with_random(state, bot)
             return
@@ -383,6 +502,8 @@ class RoundManager:
                 await asyncio.sleep(e.retry_after)
         if state.letter_timeout_task and not state.letter_timeout_task.done():
             state.letter_timeout_task.cancel()
+        state.letter_message_chat_id = msg.chat.id
+        state.letter_message_id = msg.message_id
         state.letter_timeout_task = asyncio.create_task(
             self._letter_timeout(msg, bot, state)
         )
@@ -423,6 +544,16 @@ class RoundManager:
 
         await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
 
+        # Eliminar el teclado de letras
+        if state.letter_message_id:
+            try:
+                await bot.delete_message(
+                    chat_id=state.letter_message_chat_id,
+                    message_id=state.letter_message_id,
+                )
+            except TelegramBadRequest:
+                pass
+
         countdown = await bot.send_message(
             state.group_chat_id,
             f"<b>Letra: {letter}</b>\n⏱ Siguiente ronda en 5 segundos...",
@@ -442,6 +573,7 @@ class RoundManager:
             total_rounds=state.total_rounds,
             player_names=state.player_names,
             bot=bot,
+            host_telegram_id=state.host_telegram_id,
         )
 
     async def _start_next_round_with_letter(
@@ -459,6 +591,7 @@ class RoundManager:
             total_rounds=prev_state.total_rounds,
             player_names=prev_state.player_names,
             bot=bot,
+            host_telegram_id=prev_state.host_telegram_id,
         )
 
     async def _start_next_round_with_random(self, state, bot):
@@ -568,7 +701,7 @@ class RoundManager:
         self,
         round_id: int,
         state: RoundState,
-    ) -> None:
+    ) -> dict[int, int]:
         async with async_session_factory() as session:
             repo = RoundRepository(session)
             answers_by_player = await repo.get_answers_by_player(round_id)
@@ -578,46 +711,60 @@ class RoundManager:
                 answers_by_player,
                 len(state.categories),
                 first_completer_id=state.first_completer_id,
+                spell_corrector=get_corrector(),
+                letter=state.letter,
             )
 
-            # Persistir Answer.score y Answer.is_correct
+            # ── LOG TEMPORAL: muestra que respuestas fueron correctas/incorrectas ──
+            logger.info("=== RESULTADOS RONDA %s (letra=%s) ===", state.round_number, state.letter)
             for pid, answer_list in details.items():
-                answer_updates = []
+                pname = state.player_names.get(pid, f"ID{pid}")
                 for ad in answer_list:
-                    answer_updates.append(
+                    status = "✅" if ad["is_correct"] else "❌"
+                    logger.info(
+                        "  %s %s | %s: '%s' → %d pts",
+                        status, pname, ad["word_slot"], ad["raw_text"], ad["score"],
+                    )
+            if details:
+                logger.info("  --- Totales ---")
+                for pid, total in sorted(totals.items(), key=lambda x: x[1], reverse=True):
+                    pname = state.player_names.get(pid, f"ID{pid}")
+                    logger.info("  %s: %d pts", pname, total)
+            logger.info("=== FIN RESULTADOS RONDA %s ===", state.round_number)
+
+            # Persistir Answer.score y Answer.is_correct (batch)
+            all_updates = []
+            for pid, answer_list in details.items():
+                for ad in answer_list:
+                    all_updates.append(
                         (
                             ad["answer_id"],
                             ad["is_correct"],
                             ad["score"],
                         )
                     )
-                if answer_updates:
-                    await repo.update_answer_scores(answer_updates)
+            if all_updates:
+                await repo.update_answer_scores(all_updates)
 
-            # Persistir GamePlayer.score (acumulado)
-            for telegram_id, round_score in totals.items():
-                gp = await repo.get_game_player_by_telegram(state.game_id, telegram_id)
-                if gp:
-                    gp.score = (gp.score or 0) + round_score
+            # Persistir GamePlayer.score (acumulado) — batch
+            if totals:
+                telegram_ids = list(totals.keys())
+                gps = await repo.get_game_players_by_telegrams(state.game_id, telegram_ids)
+                for tid, round_score in totals.items():
+                    gp = gps.get(tid)
+                    if gp:
+                        gp.score = (gp.score or 0) + round_score
 
             await session.commit()
 
-    async def _build_summary(self, round_id: Optional[int], state: RoundState) -> str:
-        if round_id is None:
+            return totals
+
+    @staticmethod
+    def _build_summary(round_scores: dict[int, int], state: RoundState) -> str:
+        if not round_scores:
             return (
                 f"<b>📊 Ronda {state.round_number} — Resumen</b>\n"
-                f"No se pudieron recuperar las respuestas."
-            )
-
-        async with async_session_factory() as session:
-            repo = RoundRepository(session)
-            all_rounds_answers = await repo.get_answers_by_player(round_id)
-
-            engine = ScoreEngine()
-            scores, _ = engine.evaluate(
-                all_rounds_answers,
-                len(state.categories),
-                first_completer_id=state.first_completer_id,
+                f"  No se registraron puntuaciones."
             )
 
         lines = [
@@ -626,7 +773,7 @@ class RoundManager:
             "",
         ]
 
-        for pid, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+        for pid, score in sorted(round_scores.items(), key=lambda x: x[1], reverse=True):
             name = state.player_names.get(pid, f"Jugador {pid}")
             lines.append(f"  {name}: {score} pts")
 
@@ -636,11 +783,6 @@ class RoundManager:
                 f"⭐ <b>{state.first_completer_name}</b> fue el primero "
                 f"en completar todas las categorías."
             )
-
-        # Mostrar bonus si aplica
-        if state.first_completer_name and (
-            state.stop_presses >= NUM_STOP_BUTTONS or state.first_completer_id
-        ):
             lines.append(f"  🏎️ Bonus velocidad: +{FIRST_COMPLETER_BONUS} pts")
 
         return "\n".join(lines)
@@ -701,12 +843,21 @@ class RoundManager:
 ANSWER_REGEX = re.compile(r"^\s*(.+?)\s*:\s*(.*?)\s*$", re.MULTILINE)
 
 
+def _unaccent(s: str) -> str:
+    """Elimina tildes/diacriticos de una cadena."""
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+
+
 def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
-    cat_map = {cat.lower(): cat for cat in categories}
-    result = {}
+    # Mapa sin acentos: "pais" → "País", "novela/serie" → "Novela/Serie", ...
+    cat_map: dict[str, str] = {}
+    for cat in categories:
+        cat_map[_unaccent(cat.lower())] = cat
+
+    result: dict[str, str] = {}
 
     for match in ANSWER_REGEX.finditer(text):
-        raw_cat = match.group(1).strip().lower()
+        raw_cat = _unaccent(match.group(1).strip().lower())
         value = match.group(2).strip()
         if not value:
             continue

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import Row, select
@@ -84,7 +84,7 @@ class GameRepository(BaseRepository[Game]):
         return game
 
     async def get_stale_games(self) -> list[Game]:
-        cutoff = datetime.utcnow() - timedelta(days=1)
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
         stmt = (
             select(Game)
             .where(Game.status.in_(["lobby", "playing"]))

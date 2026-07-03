@@ -350,6 +350,7 @@ class LobbyManager:
             total_rounds=total_rounds,
             player_names=player_names,
             bot=bot,
+            host_telegram_id=state.host_telegram_id,
         )
 
     # --- Limpieza --------------------------------------------------------------

@@ -28,7 +28,9 @@ class Player(Base):
 
     game_players: Mapped[list["GamePlayer"]] = relationship(back_populates="player")
     answers: Mapped[list["Answer"]] = relationship(back_populates="player")
-    weekly_leaderboards: Mapped[list["WeeklyLeaderboard"]] = relationship(back_populates="player")
+    weekly_leaderboards: Mapped[list["WeeklyLeaderboard"]] = relationship(
+        back_populates="player"
+    )
 
 
 class Game(Base):
@@ -121,3 +123,16 @@ class GroupConfig(Base):
     categories: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     include_n: Mapped[bool] = mapped_column(default=False)
     language: Mapped[str] = mapped_column(String(8), default="es")
+
+
+class WordListItem(Base):
+    __tablename__ = "word_list_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    word: Mapped[str] = mapped_column(String(128))
+    normalized: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<WordListItem id={self.id} cat={self.category} word={self.word}>"

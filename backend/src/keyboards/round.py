@@ -34,3 +34,22 @@ def letter_keyboard(game_id: int) -> InlineKeyboardMarkup:
             rows.append(row)
             row = []
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def inter_round_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="▶️ Siguiente ronda",
+                    callback_data=f"next_round:{game_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏹ Detener partida",
+                    callback_data=f"stop_game:{game_id}",
+                ),
+            ],
+        ]
+    )

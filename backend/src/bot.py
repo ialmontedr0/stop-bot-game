@@ -54,11 +54,20 @@ async def on_startup() -> None:
     logger.info("Bot iniciado", version="1.0.0")
     await game_orchestrator.cleanup_stale_games()
 
+    # Cargar word lists de color/fruta/pais desde DB
+    from src.services.spell_corrector import get_corrector
+
+    await get_corrector().load_db_word_lists()
+    logger.info("Word lists cargadas desde DB")
+
 
 async def on_shutdown() -> None:
     await engine.dispose()
     if _redis_client:
         await _redis_client.close()
+    from src.services.spell_corrector import get_corrector
+
+    await get_corrector().close()
     logger.info("Bot detenido")
 
 

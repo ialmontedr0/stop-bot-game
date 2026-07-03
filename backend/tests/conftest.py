@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from src.db.models import Base, Game, GamePlayer, Player
+from src.db.models import Base, Game, GamePlayer, Player, WordListItem
 
 
 @pytest.fixture(scope="session")

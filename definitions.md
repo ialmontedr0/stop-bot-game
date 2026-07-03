@@ -65,3 +65,694 @@ El bot debe recopilar métricas detalladas: puntuaciones por jugador en cada ron
 Por ejemplo, al terminar la semana el bot envía la tabla de posiciones y menciona al ganador absoluto. Se puede configurar la BD para reiniciar el conteo semanal o mantener historiales mensuales. Las recompensas pueden ser simples (sticker exclusivo, título en el grupo, puntos de karma) o integraciones con sistemas externos (cupón real, si corresponde). El objetivo es motivar a los jugadores a volver cada semana. En resumen, se definen métricas clave (puntos totales, rondas ganadas, streaks) y se diseña un sistema de gamificación basado en ellas (badges, roles, premios) para aumentar la retención y la diversión del juego.
 
 Fuentes: Para este plan se consultaron la documentación oficial de Telegram Bot API y tutoriales de bots, materiales sobre arquitecturas de IA con RAG, y guías sobre fuzzy matching en Python. También se tuvo en cuenta un ejemplo de ciclo de desarrollo de bots de juego y prácticas de CI/CD con FastAPI y GitHub Actions para estructurar las fases de implementación.
+
+PAISES:
+
+### 🌍 Lista completa de países en español (195)
+
+* Afganistán
+
+* Albania
+
+* Alemania
+
+* Andorra
+
+* Angola
+
+* Antigua y Barbuda
+
+* Arabia Saudita
+
+* Argelia
+
+* Argentina
+
+* Armenia
+
+* Australia
+
+* Austria
+
+* Azerbaiyán
+
+* Bahamas
+
+* Baréin
+
+* Bangladés
+
+* Barbados
+
+* Bélgica
+
+* Belice
+
+* Benín
+
+* Bielorrusia
+
+* Birmania
+
+* Bolivia
+
+* Bosnia y Herzegovina
+
+* Botsuana
+
+* Brasil
+
+* Brunéi
+
+* Bulgaria
+
+* Burkina Faso
+
+* Burundi
+
+* Bután
+
+* Cabo Verde
+
+* Camboya
+
+* Camerún
+
+* Canadá
+
+* Catar
+
+* Chad
+
+* Chile
+
+* China
+
+* Chipre
+
+* Ciudad del Vaticano
+
+* Colombia
+
+* Comoras
+
+* Corea del Norte
+
+* Corea del Sur
+
+* Costa de Marfil
+
+* Costa Rica
+
+* Croacia
+
+* Cuba
+
+* Dinamarca
+
+* Dominica
+
+* Ecuador
+
+* Egipto
+
+* El Salvador
+
+* Emiratos Árabes Unidos
+
+* Eritrea
+
+* Eslovaquia
+
+* Eslovenia
+
+* España
+
+* Estados Unidos
+
+* Estado de Palestina
+
+* Estonia
+
+* Esuatini
+
+* Etiopía
+
+* Filipinas
+
+* Finlandia
+
+* Fiyi
+
+* Francia
+
+* Gabón
+
+* Gambia
+
+* Georgia
+
+* Ghana
+
+* Granada
+
+* Grecia
+
+* Guatemala
+
+* Guinea
+
+* Guinea-Bisáu
+
+* Guinea Ecuatorial
+
+* Guyana
+
+* Haití
+
+* Honduras
+
+* Hungría
+
+* India
+
+* Indonesia
+
+* Irak
+
+* Irán
+
+* Irlanda
+
+* Islandia
+
+* Islas Marshall
+
+* Islas Salomón
+
+* Israel
+
+* Italia
+
+* Jamaica
+
+* Japón
+
+* Jordania
+
+* Kazajistán
+
+* Kenia
+
+* Kirguistán
+
+* Kiribati
+
+* Kuwait
+
+* Laos
+
+* Lesoto
+
+* Letonia
+
+* Líbano
+
+* Liberia
+
+* Libia
+
+* Liechtenstein
+
+* Lituania
+
+* Luxemburgo
+
+* Macedonia del Norte
+
+* Madagascar
+
+* Malasia
+
+* Malaui
+
+* Maldivas
+
+* Malí
+
+* Malta
+
+* Marruecos
+
+* Mauricio
+
+* Mauritania
+
+* México
+
+* Micronesia
+
+* Moldavia
+
+* Mónaco
+
+* Mongolia
+
+* Montenegro
+
+* Mozambique
+
+* Namibia
+
+* Nauru
+
+* Nepal
+
+* Nicaragua
+
+* Níger
+
+* Nigeria
+
+* Noruega
+
+* Nueva Zelanda
+
+* Omán
+
+* Países Bajos
+
+* Pakistán
+
+* Palaos
+
+* Palestina
+
+* Panamá
+
+* Papúa Nueva Guinea
+
+* Paraguay
+
+* Perú
+
+* Polonia
+
+* Portugal
+
+* Reino Unido
+
+* República Centroafricana
+
+* República Checa
+
+* República del Congo
+
+* República Democrática del Congo
+
+* República Dominicana
+
+* Ruanda
+
+* Rumanía
+
+* Rusia
+
+* Samoa
+
+* San Cristóbal y Nieves
+
+* San Marino
+
+* San Vicente y las Granadinas
+
+* Santa Lucía
+
+* Santo Tomé y Príncipe
+
+* Senegal
+
+* Serbia
+
+* Seychelles
+
+* Sierra Leona
+
+* Singapur
+
+* Siria
+
+* Somalia
+
+* Sri Lanka
+
+* Sudáfrica
+
+* Sudán
+
+* Sudán del Sur
+
+* Suecia
+
+* Suiza
+
+* Surinam
+
+* Tailandia
+
+* Tanzania
+
+* Tayikistán
+
+* Timor Oriental
+
+* Togo
+
+* Tonga
+
+* Trinidad y Tobago
+
+* Túnez
+
+* Turkmenistán
+
+* Turquía
+
+* Tuvalu
+
+* Ucrania
+
+* Uganda
+
+* Uruguay
+
+* Uzbekistán
+
+* Vanuatu
+
+* Vaticano
+
+* Venezuela
+
+* Vietnam
+
+* Yemen
+
+* Yibuti
+
+* Zambia
+
+* Zimbabue
+
+### 🌎 Diferencias más comunes en español de Latinoamérica
+
+La mayoría de los países se escriben igual en toda Hispanoamérica. Las principales diferencias son estas:
+
+| España          | Latinoamérica                      |
+| --------------- | ---------------------------------- |
+| Arabia Saudita  | Arabia Saudita (igual)             |
+| Catar           | Qatar (muy usado en LATAM)         |
+| Birmania        | Myanmar (más usado en LATAM)       |
+| República Checa | Chequia (cada vez más usado)       |
+| Esuatini        | Esuatini (igual)                   |
+| Moldavia        | Moldova (también frecuente)        |
+| Turquía         | Türkiye (uso diplomático reciente) |
+
+
+COLORES: 
+
+## Colores básicos
+
+* Blanco
+* Negro
+* Gris
+* Rojo
+* Azul
+* Amarillo
+* Verde
+* Naranja
+* Morado
+* Púrpura
+* Violeta
+* Rosa
+* Rosado
+* Marrón
+* Café
+
+## Colores cálidos
+
+* Carmesí
+* Carmín
+* Escarlata
+* Bermellón
+* Granate
+* Burdeos
+* Coral
+* Salmón
+* Terracota
+* Ladrillo
+* Cobre
+* Caoba
+* Óxido
+* Melocotón
+* Durazno
+* Albaricoque
+* Ámbar
+* Mostaza
+* Dorado
+* Oro
+* Ocre
+* Arena
+* Beige
+* Crema
+* Marfil
+* Hueso
+
+## Azules
+
+* Celeste
+* Turquesa
+* Aguamarina
+* Cian
+* Índigo
+* Añil
+* Cerúleo
+* Cobalto
+* Ultramar
+* Zafiro
+
+## Verdes
+
+* Lima
+* Oliva
+* Esmeralda
+* Jade
+* Menta
+* Musgo
+* Pino
+* Pistacho
+* Caqui
+
+## Amarillos
+
+* Canario
+* Pastel
+* Mostaza
+* Ambar
+
+## Violetas y rosas
+
+* Lila
+* Lavanda
+* Malva
+* Magenta
+* Fucsia
+* Orquídea
+
+## Marrones
+
+* Chocolate
+* Canela
+* Avellana
+* Castaño
+* Tabaco
+* Siena
+* Tierra
+* Habano
+* Café
+
+## Blancos y grises
+
+* Plateado
+
+## Metálicos
+
+* Oro
+* Dorado
+* Plata
+* Plateado
+* Bronce
+* Cobre
+* Latón
+* Platino
+* Titanio
+
+## Tonos especiales
+
+* Turquesa
+* Esmeralda
+* Jade
+* Rubí
+* Zafiro
+* Perla
+* Nácar
+* Ébano
+* Marfil
+* Arena
+* Humo
+* Carbón
+* Grafito
+* Neón
+* Fluorescente
+
+## Diferencias entre España y Latinoamérica
+
+Estas son las diferencias más habituales:
+
+| España     | Latinoamérica                  |                         |
+| ---------- | ------------------------------ | ----------------------- |
+| Marrón     | Café (muy frecuente)           |                         |
+| Rosa       | Rosado (muy frecuente)         |                         |
+| Morado     | Morado o púrpura               |                         |
+| Anaranjado | Naranja o anaranjado           |                         |
+| Gris       | Gris (igual)                   |                         |
+| Beige      | Beige (igual)                  |                         |
+| Turquesa   | Turquesa (igual)               |                         |
+| Granate    | Vino o granate (según el país) | ([Woodward Español][2]) |
+
+
+
+FRUTAS:
+
+
+| Español          | Español (Latinoamérica)                   |
+| ---------------- | ----------------------------------------- |
+| Abiu             | Abiú                                      |
+| Aceituna         | Aceituna                                  |
+| Acerola          | Acerola                                   |
+| Aguacate         | **Palta** (Cono Sur), Aguacate            |
+| Akebia           | Akebia                                    |
+| Albaricoque      | **Damasco**, Chabacano                    |
+| Almendra         | Almendra                                  |
+| Ananá            | **Piña** (la mayoría de países)           |
+| Arándano         | Arándano                                  |
+| Arándano rojo    | Arándano rojo                             |
+| Atemoya          | Atemoya                                   |
+| Avellana         | Avellana                                  |
+| Açaí             | Açaí                                      |
+| Babaco           | Babaco                                    |
+| Badea            | Badea                                     |
+| Banana           | **Plátano**, Banano, Guineo, Cambur       |
+| Bergamota        | Bergamota                                 |
+| Borojó           | Borojó                                    |
+| Cacao            | Cacao                                     |
+| Caimito          | Caimito                                   |
+| Carambola        | Carambola                                 |
+| Cereza           | **Guinda** (algunas regiones)             |
+| Chabacano        | Albaricoque                               |
+| Chirimoya        | Chirimoya                                 |
+| Ciruela          | Ciruela                                   |
+| Ciruela pasa     | Ciruela pasa                              |
+| Coco             | Coco                                      |
+| Damasco          | Albaricoque                               |
+| Dátil            | Dátil                                     |
+| Dragon fruit     | **Pitahaya**                              |
+| Durazno          | **Melocotón** (España)                    |
+| Durián           | Durián                                    |
+| Endrina          | Endrina                                   |
+| Escaramujo       | Escaramujo                                |
+| Feijoa           | Feijoa                                    |
+| Frambuesa        | Frambuesa                                 |
+| Fresa            | **Frutilla**                              |
+| Granada          | Granada                                   |
+| Granadilla       | Granadilla                                |
+| Grosella         | Grosella                                  |
+| Guanábana        | Guanábana                                 |
+| Guaraná          | Guaraná                                   |
+| Guayaba          | Guayaba                                   |
+| Guinda           | Cereza                                    |
+| Higo             | Higo                                      |
+| Icaco            | Icaco                                     |
+| Ilama            | Ilama                                     |
+| Jaboticaba       | Jaboticaba                                |
+| Jackfruit        | Yaca                                      |
+| Jambo            | Jambo                                     |
+| Jujuba           | Azufaifa                                  |
+| Kaki             | Caqui                                     |
+| Kiwi             | Kiwi                                      |
+| Kumquat          | Quinoto                                   |
+| Limón            | Limón                                     |
+| Lima             | Lima                                      |
+| Lichi            | Lichi                                     |
+| Longan           | Longan                                    |
+| Lúcuma           | Lúcuma                                    |
+| Lulo             | Naranjilla                                |
+| Mamey            | Mamey                                     |
+| Mamoncillo       | Quenepa, Limoncillo                       |
+| Mandarina        | Mandarina                                 |
+| Mango            | Mango                                     |
+| Mangostán        | Mangostán                                 |
+| Manzana          | Manzana                                   |
+| Maracuyá         | **Parcha**, Fruta de la pasión            |
+| Melocotón        | Durazno                                   |
+| Melón            | Melón                                     |
+| Membrillo        | Membrillo                                 |
+| Mirabel          | Mirabel                                   |
+| Mora             | Zarzamora (según región)                  |
+| Naranja          | Naranja                                   |
+| Naranja sanguina | Naranja roja                              |
+| Nectarina        | Nectarina                                 |
+| Níspero          | Níspero                                   |
+| Noni             | Noni                                      |
+| Papaya           | **Lechosa** (Venezuela)                   |
+| Pera             | Pera                                      |
+| Persimón         | Caqui                                     |
+| Physalis         | **Uchuva**, Aguaymanto                    |
+| Piña             | **Ananá** (Argentina, Paraguay y Uruguay) |
+| Pitanga          | Pitanga                                   |
+| Pitahaya         | Fruta del dragón                          |
+| Plátano          | Banano, Banana, Guineo, Cambur            |
+| Pomelo           | **Toronja**                               |
+| Rambután         | Rambután                                  |
+| Sapote           | Zapote                                    |
+| Sandía           | **Patilla** (algunos países)              |
+| Tamarillo        | Tomate de árbol                           |
+| Tamarindo        | Tamarindo                                 |
+| Toronja          | Pomelo                                    |
+| Tuna             | Higo chumbo                               |
+| Uchuva           | Aguaymanto                                |
+| Uva              | Uva                                       |
+| Uva espina       | Grosella                                  |
+| Yaca             | Jackfruit                                 |
+| Yuzu             | Yuzu                                      |
+| Zapote           | Sapote                                    |
+| Zarzamora        | Mora                                      |
+
+### Nombres que cambian con más frecuencia entre España y Latinoamérica
+
+| España      | Latinoamérica                        |
+| ----------- | ------------------------------------ |
+| Melocotón   | Durazno                              |
+| Albaricoque | Damasco / Chabacano                  |
+| Fresa       | Frutilla                             |
+| Aguacate    | Palta                                |
+| Piña        | Ananá (Argentina, Uruguay, Paraguay) |
+| Pomelo      | Toronja                              |
+| Maracuyá    | Parcha, Fruta de la pasión           |
+| Plátano     | Banana, Banano, Guineo, Cambur       |
+| Pitahaya    | Fruta del dragón                     |
+| Physalis    | Uchuva, Aguaymanto                   |
+| Mamoncillo  | Quenepa, Limoncillo                  |
+| Papaya      | Lechosa (Venezuela)                  |
+
+

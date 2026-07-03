@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from src.db.models import Answer, GamePlayer, Player, Round
-
+from src.core.text_utils import normalize_text as _normalize_text
 from .base import BaseRepository
 
 
@@ -91,6 +91,7 @@ class RoundRepository(BaseRepository[Round]):
                 game_player_id=gp.id,
                 word_slot=slot,
                 raw_text=value,
+                normalized_text=_normalize_text(value),
             )
             self.session.add(a)
             result.append(a)
@@ -138,3 +139,14 @@ class RoundRepository(BaseRepository[Round]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_game_players_by_telegrams(
+        self, game_id: int, telegram_ids: list[int]
+    ) -> dict[int, GamePlayer]:
+        stmt = (
+            select(Player.telegram_id, GamePlayer)
+            .join(Player, GamePlayer.player_id == Player.id)
+            .where(GamePlayer.game_id == game_id, Player.telegram_id.in_(telegram_ids))
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return {tid: gp for tid, gp in rows}

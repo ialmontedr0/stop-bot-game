@@ -2,9 +2,13 @@ import logging
 import re
 import unicodedata
 from collections import defaultdict
-from typing import Optional
+from copy import copy
+from typing import Optional, TYPE_CHECKING
 
 from src.db.models import Answer
+
+if TYPE_CHECKING:
+    from src.services.spell_corrector import SpellCorrector
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +24,7 @@ def _normalize(text: str) -> str:
     return text
 
 
-def _is_valid_word(text: str) -> bool:
+def _is_valid_word(text: str, letter: Optional[str] = None) -> bool:
     if not text or not text.strip():
         return False
     stripped = text.strip()
@@ -28,6 +32,10 @@ def _is_valid_word(text: str) -> bool:
         return False
     if not re.match(r"^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-']+$", stripped):
         return False
+    if letter:
+        norm = _normalize(stripped)
+        if not norm or not norm.startswith(letter.lower()):
+            return False
     return True
 
 
@@ -46,14 +54,23 @@ def _group_by_category(
 
 def _determine_answer_scores(
     player_answers: list[tuple[int, Answer]],
+    spell_corrector: Optional["SpellCorrector"] = None,
+    letter: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> dict[int, tuple[bool, int]]:
+    if spell_corrector is not None:
+        return _determine_answer_scores_fuzzy(
+            player_answers, spell_corrector, letter=letter, category=category
+        )
+
+    # --- Original exact-matching logic (sin cambios) ---
     norm_map: dict[str, list[int]] = {}
     answer_map: dict[int, Answer] = {}
 
     for pid, answer in player_answers:
         answer_map[pid] = answer
         txt = answer.raw_text.strip()
-        if not txt or not _is_valid_word(txt):
+        if not txt or not _is_valid_word(txt, letter=letter):
             continue
         norm = _normalize(txt)
         if norm:
@@ -83,12 +100,97 @@ def _determine_answer_scores(
     return result
 
 
+def _determine_answer_scores_fuzzy(
+    player_answers: list[tuple[int, Answer]],
+    spell_corrector: "SpellCorrector",
+    letter: Optional[str] = None,
+    category: Optional[str] = None,
+) -> dict[int, tuple[bool, int]]:
+    all_pids = {pid for pid, _ in player_answers}
+
+    # ── Si es categoría con word list en BD, validar primero ──
+    if category and spell_corrector.is_db_category(category):
+        valid_answers: list[tuple[int, Answer]] = []
+        invalid_pids: set[int] = set()
+        for pid, ans in player_answers:
+            txt = ans.raw_text.strip()
+            if not _is_valid_word(txt, letter=letter):
+                invalid_pids.add(pid)
+                continue
+            is_valid, corrected = spell_corrector.validate_against_list(txt, category)
+            if is_valid:
+                corrected_ans = copy(ans)
+                corrected_ans.raw_text = corrected
+                valid_answers.append((pid, corrected_ans))
+            else:
+                invalid_pids.add(pid)
+
+        if not valid_answers:
+            return {pid: (False, 0) for pid in all_pids}
+
+        clusters = spell_corrector.cluster_answers(valid_answers)
+        result: dict[int, tuple[bool, int]] = {}
+
+        for cluster in clusters:
+            if not cluster:
+                continue
+            count = len(cluster)
+            if count == 1:
+                pid = next(iter(cluster))
+                result[pid] = (True, UNIQUE_POINTS)
+            else:
+                share = UNIQUE_POINTS // count
+                for pid in cluster:
+                    result[pid] = (False, share)
+
+        for pid in all_pids:
+            if pid not in result:
+                result[pid] = (False, 0)
+
+        return result
+
+    # ── Comportamiento original para categorías sin BD ──
+    clusters = spell_corrector.cluster_answers(player_answers)
+
+    result: dict[int, tuple[bool, int]] = {}
+
+    for cluster in clusters:
+        if not cluster:
+            continue
+        count = len(cluster)
+        if count == 1:
+            pid = next(iter(cluster))
+            answer = next(ans for p, ans in player_answers if p == pid)
+            txt = answer.raw_text.strip()
+            if txt and _is_valid_word(txt, letter=letter):
+                result[pid] = (True, UNIQUE_POINTS)
+            else:
+                result[pid] = (False, 0)
+        else:
+            share = UNIQUE_POINTS // count
+            for pid in cluster:
+                result[pid] = (False, share)
+
+    for pid in all_pids:
+        if pid not in result:
+            answer = next(ans for p, ans in player_answers if p == pid)
+            txt = answer.raw_text.strip()
+            if txt and _is_valid_word(txt, letter=letter):
+                result[pid] = (True, UNIQUE_POINTS)
+            else:
+                result[pid] = (False, 0)
+
+    return result
+
+
 class ScoreEngine:
     def evaluate(
         self,
         answers_by_player: dict[int, list[Answer]],
         num_categories: int,
         first_completer_id: Optional[int] = None,
+        spell_corrector: Optional["SpellCorrector"] = None,
+        letter: Optional[str] = None,
     ) -> tuple[dict[int, int], dict[int, list[dict]]]:
         totals: dict[int, int] = defaultdict(int)
         details: dict[int, list[dict]] = defaultdict(list)
@@ -99,19 +201,23 @@ class ScoreEngine:
         categories = _group_by_category(answers_by_player)
 
         for canonical_cat, player_answers in categories.items():
-            answer_scores = _determine_answer_scores(player_answers)
+            answer_scores = _determine_answer_scores(
+                player_answers, spell_corrector, letter=letter, category=canonical_cat
+            )
+            answers_by_pid = {pid: ans for pid, ans in player_answers}
             for pid, (is_unique, cat_score) in answer_scores.items():
                 totals[pid] += cat_score
-                for p_id, ans in player_answers:
-                    if p_id == pid:
-                        details[pid].append({
+                ans = answers_by_pid.get(pid)
+                if ans is not None:
+                    details[pid].append(
+                        {
                             "answer_id": ans.id,
                             "word_slot": canonical_cat,
                             "raw_text": ans.raw_text,
                             "is_correct": cat_score > 0,
                             "score": cat_score,
-                        })
-                        break
+                        }
+                    )
 
         for pid in answers_by_player:
             if pid not in totals:
@@ -143,5 +249,5 @@ class ScoreEngine:
         return 0
 
     @staticmethod
-    def is_answer_valid(raw_text: str) -> bool:
-        return _is_valid_word(raw_text)
+    def is_answer_valid(raw_text: str, letter: Optional[str] = None) -> bool:
+        return _is_valid_word(raw_text, letter=letter)

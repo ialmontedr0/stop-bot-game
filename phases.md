@@ -208,41 +208,32 @@ ESTADO DE LA FASE: EN GUIA (ver phase4-guide.md)
 
 Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
 
-Fase 4 — Corrector ortográfico con IA / Fuzzy Matching
 
-**Objetivo:** El bot entiende variaciones ortográficas y normaliza respuestas.
+
+Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
+
+## Fase 4B — Word Lists en Base de Datos
+
+**Objetivo:** Migrar las listas de palabras de color, fruta y país desde `SEED_WORDS` hardcodeado a PostgreSQL, cargándolas en memoria al iniciar el bot para validación persistente y escalable.
 
 ### Tareas
 
-- [ ] 4.1 **Pipeline de normalización:**
-  1. Strip, lower, eliminar tildes (transliteración básica: `á → a`).
-  2. Eliminar signos de puntuación redundantes.
-  3. Tokenizar.
+- [ ] 4B.1 Crear modelo `WordListItem` en SQLAlchemy (categoría, palabra, normalized)
+- [ ] 4B.2 Crear migración Alembic y ejecutarla
+- [ ] 4B.3 Crear `WordListRepository` (CRUD de palabras por categoría)
+- [ ] 4B.4 Crear datos semilla completos (~100 colores, ~90 frutas, ~200 países con variantes)
+- [ ] 4B.5 Crear script `seed_word_lists.py` idempotente
+- [ ] 4B.6 Añadir a `SpellCorrector`: `load_db_word_lists()`, `validate_against_list()`, `is_db_category()`
+- [ ] 4B.7 Quitar color/fruta/pais de `SEED_WORDS` (dejar sets vacíos, se cargan desde BD)
+- [ ] 4B.8 Pasar `category` a `_determine_answer_scores_fuzzy` y validar contra word list
+- [ ] 4B.9 Llamar `load_db_word_lists()` en `on_startup` del bot
+- [ ] 4B.10 Tests: repositorio, validate_against_list, score engine con validación
 
-- [ ] 4.2 **Fuzzy matching entre respuestas de la misma categoría:**
-  - Usar `rapidfuzz` (Levenshtein ratio): si `ratio >= 0.75` → considerar misma palabra.
-  - Ej: `Fernando`, `Fenando`, `FERNANDO`, `felnando` → misma respuesta.
+**Entregable:** Color, fruta y país validados contra BD con fuzzy matching; 215+ tests pasando.
 
-- [ ] 4.3 **Corrección ortográfica por palabra (opcional, nivel IA):**
-  - `spaCy` + `symspellpy` para sugerir la palabra canónica.
-  - O llamada a OpenAI / Gemini API: `"Corrige esta palabra al español correcto: {word}"`.
-  - Cache en Redis de `{raw: corrected}` para evitar llamadas repetidas.
+ESTADO DE LA FASE: EN GUIA (ver phase4b-guide.md)
 
-- [ ] 4.4 **Validación semántica:**
-  - ¿La palabra pertenece realmente a la categoría?
-  - Opción A: Usar LLM (`"¿'{word}' es un {categoria}? Responde solo sí o no"`).
-  - Opción B: Lista de palabras conocidas por categoría (seed inicial + grow).
-
-- [ ] 4.5 **Modo híbrido:**
-  - Intentar fuzzy matching local primero.
-  - Si match < 0.75, caer en LLM para corrección.
-  - Configurable por variable de entorno: `SPELL_MODE=local|ai|hybrid`.
-  
-- [ ] 4.6 Límite por ronda de llamadas a API externa para control de costes.
-
-**Entregable:** Respuestas corregidas y normalizadas; duplicados detectados fuzzy.
-
-Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
+---
 
 ## Fase 5 — Configuración de partida y persistencia
 

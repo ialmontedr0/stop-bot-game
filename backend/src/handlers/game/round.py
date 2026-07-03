@@ -82,3 +82,37 @@ async def callback_letter(callback: CallbackQuery, player: Player, bot: Bot) -> 
         callback=callback,
         bot=bot,
     )
+
+
+@round_router.callback_query(F.data.startswith("next_round:"))
+async def callback_next_round(callback: CallbackQuery, player: Player, bot: Bot) -> None:
+    try:
+        _, game_id_str = callback.data.split(":")
+        game_id = int(game_id_str)
+    except (ValueError, IndexError):
+        await callback.answer("❌ Datos inválidos.", show_alert=True)
+        return
+
+    await round_manager.handle_next_round(
+        game_id=game_id,
+        player_id=player.telegram_id,
+        callback=callback,
+        bot=bot,
+    )
+
+
+@round_router.callback_query(F.data.startswith("stop_game:"))
+async def callback_stop_game(callback: CallbackQuery, player: Player, bot: Bot) -> None:
+    try:
+        _, game_id_str = callback.data.split(":")
+        game_id = int(game_id_str)
+    except (ValueError, IndexError):
+        await callback.answer("❌ Datos inválidos.", show_alert=True)
+        return
+
+    await round_manager.handle_stop_game(
+        game_id=game_id,
+        player_id=player.telegram_id,
+        callback=callback,
+        bot=bot,
+    )

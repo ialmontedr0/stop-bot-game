@@ -310,3 +310,169 @@ class TestIsAnswerValid:
 
     def test_invalid_empty(self):
         assert ScoreEngine.is_answer_valid("") is False
+
+
+class TestScoreEngineFuzzyMatching:
+    def test_fuzzy_clusters_typo(self):
+        """'Fernando' y 'Fenando' deben tratarse como duplicados."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        answers = {
+            111: [make_answer(1, "Nombre", "Fernando")],
+            222: [make_answer(2, "Nombre", "Fenando")],  # typo
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 25  # compartido
+        assert totals[222] == 25  # compartido
+
+    def test_fuzzy_different_words_separate(self):
+        """Palabras diferentes deben puntuar por separado."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        answers = {
+            111: [make_answer(1, "Nombre", "Juan")],
+            222: [make_answer(2, "Nombre", "Pedro")],
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 50  # único
+        assert totals[222] == 50  # único
+
+    def test_fuzzy_mixed_scenario(self):
+        """Mezcla de exacto, fuzzy y único."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        answers = {
+            111: [make_answer(1, "Nombre", "Fernando")],
+            222: [make_answer(2, "Nombre", "Fenando")],  # fuzzy = Fernando
+            333: [make_answer(3, "Nombre", "Juan")],  # único
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 25  # compartido con 222
+        assert totals[222] == 25  # compartido con 111
+        assert totals[333] == 50  # único
+
+    def test_fuzzy_unchanged_without_corrector(self):
+        """Sin SpellCorrector, el comportamiento es el clásico exacto."""
+        engine = ScoreEngine()
+        answers = {
+            111: [make_answer(1, "Nombre", "Fernando")],
+            222: [make_answer(2, "Nombre", "Fenando")],  # diferentes para exact match
+        }
+        totals, details = engine.evaluate(answers, 1)
+        # Sin fuzzy: son palabras diferentes → 50 c/u
+        assert totals[111] == 50
+        assert totals[222] == 50
+
+    def test_fuzzy_bonus_still_applies(self):
+        """El bonus de first completer debe seguir funcionando con fuzzy."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        answers = {
+            111: [make_answer(1, "Nombre", "Fernando")],
+            222: [make_answer(2, "Nombre", "Juan")],
+        }
+        totals, details = engine.evaluate(
+            answers, 1, first_completer_id=111, spell_corrector=sc
+        )
+        assert totals[111] == UNIQUE_POINTS + FIRST_COMPLETER_BONUS  # 60
+        assert totals[222] == UNIQUE_POINTS  # 50
+
+    def test_fuzzy_with_empty_answers(self):
+        """Respuestas vacías deben puntuar 0 incluso con fuzzy."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        answers = {
+            111: [make_answer(1, "Nombre", "")],
+            222: [make_answer(2, "Nombre", "Juan")],
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 0
+        assert totals[222] == 50
+
+
+class TestScoreEngineWordListValidation:
+    def test_valid_word_in_db_list_scores(self):
+        """Palabra válida en word list de BD debe puntuar normal."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        # Simular carga desde BD
+        sc._word_lists["color"] = {"rojo", "azul", "verde"}
+
+        answers = {
+            111: [make_answer(1, "Color", "Rojo")],
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 50
+
+    def test_invalid_word_not_in_db_list_scores_zero(self):
+        """Palabra NO válida en word list de BD debe dar 0."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["color"] = {"rojo", "azul", "verde"}
+
+        answers = {
+            111: [make_answer(1, "Color", "Naguara")],  # No es un color
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 0
+
+    def test_fuzzy_valid_word_against_db_list(self):
+        """Palabra con typo que fuzzy matchea contra word list debe ser válida."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["pais"] = {"venezuela", "colombia", "argentina"}
+
+        answers = {
+            111: [make_answer(1, "País", "Venezula")],  # typo
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 50  # fuzzy match → válido
+
+    def test_mixed_valid_and_invalid_in_db_category(self):
+        """Válidos duplicados e inválido en misma categoría BD."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["fruta"] = {"manzana", "pera", "uva"}
+
+        answers = {
+            111: [make_answer(1, "Fruta", "Manzana")],  # válido
+            222: [make_answer(2, "Fruta", "Manzana")],  # válido, duplicado
+            333: [make_answer(3, "Fruta", "Tractor")],  # inválido
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 25  # compartido con 222
+        assert totals[222] == 25  # compartido con 111
+        assert totals[333] == 0  # inválido
+
+    def test_non_db_category_unchanged(self):
+        """Categorías sin BD (ej: nombre) deben seguir comportamiento original."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(fuzzy_threshold=75)
+
+        answers = {
+            111: [
+                make_answer(1, "Nombre", "Naguara")
+            ],  # no está en word list pero no es BD
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+        assert totals[111] == 50  # comportamiento original: se permite
