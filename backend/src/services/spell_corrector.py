@@ -381,7 +381,7 @@ class SpellCorrector:
             str: _description_
         """
         norm = self.normalize(word)
-        cat_lower = category.lower().strip()
+        cat_lower = self._normalize_category(category)
         cat_words = self._word_lists.setdefault(cat_lower, set())
 
         # 1 - Ya esta en word list
@@ -500,7 +500,7 @@ class SpellCorrector:
             bool: _description_
         """
         norm = self.normalize(word)
-        cat_lower = category.lower().strip()
+        cat_lower = self._normalize_category(category)
         cat_words = self._word_lists.setdefault(cat_lower, set())
 
         # 1 - En word list
@@ -602,12 +602,12 @@ class SpellCorrector:
             category (str): _description_
         """
         norm = self.normalize(word)
-        cat_lower = category.lower().strip()
+        cat_lower = self._normalize_category(category)
         self._word_lists.setdefault(cat_lower, set()).add(norm)
 
     def is_in_word_list(self, word: str, category: str) -> bool:
         norm = self.normalize(word)
-        cat_lower = category.lower().strip()
+        cat_lower = self._normalize_category(category)
         return norm in self._word_lists.get(cat_lower, set())
 
     # --- Carga desde base de datos -----------------------------------------------------

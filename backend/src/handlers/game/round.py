@@ -6,7 +6,6 @@ from aiogram.types import CallbackQuery, Message
 from src.db.models import Player
 from src.services.round_manager import (
     round_manager,
-    parse_answers,
     ALPHABET,
 )
 
@@ -28,10 +27,6 @@ async def handle_round_answer(message: Message, player: Player, bot: Bot) -> Non
 
     state = round_manager.get_active_round_by_group(message.chat.id)
     if not state:
-        return
-
-    parsed = parse_answers(message.text, state.categories)
-    if not parsed:
         return
 
     try:

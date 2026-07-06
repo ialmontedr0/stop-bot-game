@@ -699,6 +699,8 @@ class RoundManager:
                 chat_id=state.message_chat_id,
                 message_id=state.message_id,
             )
+        except asyncio.CancelledError:
+            pass
         except TelegramBadRequest:
             pass
         except TelegramRetryAfter as e:

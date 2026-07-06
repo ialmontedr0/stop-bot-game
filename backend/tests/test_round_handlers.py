@@ -60,9 +60,8 @@ async def test_handle_round_answer_invalid_format(mock_rm):
     player = MagicMock(spec=Player)
     bot = AsyncMock()
 
-    with patch("src.handlers.game.round.parse_answers", return_value={}):
-        await handle_round_answer(message, player, bot)
-        mock_rm.submit_answers.assert_not_called()
+    await handle_round_answer(message, player, bot)
+    mock_rm.submit_answers.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -91,13 +90,11 @@ async def test_handle_round_answer_submits(mock_rm):
     player.id = 1
     bot = AsyncMock()
 
-    with patch("src.handlers.game.round.parse_answers") as mock_parse:
-        mock_parse.return_value = {"Nombre": "Juan", "Color": "Rojo"}
-        await handle_round_answer(message, player, bot)
+    await handle_round_answer(message, player, bot)
 
-        mock_rm.submit_answers.assert_awaited_once_with(
-            game_id=1, player=player, text=message.text, bot=bot
-        )
+    mock_rm.submit_answers.assert_awaited_once_with(
+        game_id=1, player=player, text=message.text, bot=bot
+    )
 
 
 # ── callback_stop ───────────────────────────────────────────────────────────

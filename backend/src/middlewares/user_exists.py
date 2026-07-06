@@ -28,6 +28,15 @@ class UserExistsMiddleware(BaseMiddleware):
                     data["player"] = player
             except Exception:
                 logger.exception("Error al obtener/crear jugador %s", user.id)
+                bot = data.get("bot")
+                if bot and user:
+                    try:
+                        await bot.send_message(
+                            user.id,
+                            "❌ Error de conexión. Intenta de nuevo.",
+                        )
+                    except Exception:
+                        pass
                 return
         return await handler(event, data)
 

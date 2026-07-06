@@ -65,10 +65,8 @@ def _determine_answer_scores(
 
     # --- Original exact-matching logic (sin cambios) ---
     norm_map: dict[str, list[int]] = {}
-    answer_map: dict[int, Answer] = {}
 
     for pid, answer in player_answers:
-        answer_map[pid] = answer
         txt = answer.raw_text.strip()
         if not txt or not _is_valid_word(txt, letter=letter):
             continue
