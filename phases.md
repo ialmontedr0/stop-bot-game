@@ -12,20 +12,20 @@
 
 ### Tareas
 
-- [ ] 0.1 Crear repositorio, estructura de directorios y entorno virtual.
-- [ ] 0.2 Configurar `poetry` o `pip` + `requirements.txt`.
-- [ ] 0.3 Docker-compose: `postgres:16`, `redis:7`, `app`.
-- [ ] 0.4 Modelo de datos (SQLAlchemy):
+- [x] 0.1 Crear repositorio, estructura de directorios y entorno virtual.
+- [x] 0.2 Configurar `poetry` o `pip` + `requirements.txt`.
+- [x] 0.3 Docker-compose: `postgres:16`, `redis:7`, `app`.
+- [x] 0.4 Modelo de datos (SQLAlchemy):
   - `Player(id, telegram_id, username, first_name, last_name, language_code, created_at)`
   - `Game(id, group_chat_id, status, current_round, total_rounds, created_at, finished_at)`
   - `GamePlayer(id, game_id, player_id, score, joined_at)`
   - `Round(id, game_id, round_number, letter, status, started_at, stopped_at)`
   - `Answer(id, round_id, player_id, word_slot, raw_text, normalized_text, is_correct, score)`
   - `WeeklyLeaderboard(id, player_id, week_start, total_score, games_played, rank)`
-- [ ] 0.5 Migration system con `alembic`.
-- [ ] 0.6 Fábrica de `Application` de aiogram con `Dispatcher`, `Router`, `FSM` storage en Redis.
-- [ ] 0.7 Middleware: `Throttling`, `UserExistsMiddleware` (crea Player si no existe).
-- [ ] 0.8 Estructura de ficheros propuesta:
+- [x] 0.5 Migration system con `alembic`.
+- [x] 0.6 Fábrica de `Application` de aiogram con `Dispatcher`, `Router`, `FSM` storage en Redis.
+- [x] 0.7 Middleware: `Throttling`, `UserExistsMiddleware` (crea Player si no existe).
+- [x] 0.8 Estructura de ficheros propuesta:
 
 ```
 src/
@@ -62,20 +62,20 @@ ESTADO DE LA FASE: LISTA (ver phase0-guide.md)
 
 ### Tareas
 
-- [ ] 1.1 Detectar cuando el bot es añadido a un grupo (`my_chat_member` → `ChatMemberHandler`).
-- [ ] 1.2 Comando `/stop` — inicia lobby en el grupo.
-- [ ] 1.3 Bot genera un mensaje con:
+- [x] 1.1 Detectar cuando el bot es añadido a un grupo (`my_chat_member` → `ChatMemberHandler`).
+- [x] 1.2 Comando `/stop` — inicia lobby en el grupo.
+- [x] 1.3 Bot genera un mensaje con:
   - Texto animado (editing message) con `"🛑 STOP — Sala abierta"`
   - Contador de jugadores: `👤 X / 10`
   - Botón **«🟢 Unirse»** (inline) — cualquiera en el grupo puede unirse.
   - Botón **«▶️ Iniciar»** (solo visible para el host — primer usuario que ejecutó `/stop`).
-- [ ] 1.4 Al pulsar «Unirse»:
+- [x] 1.4 Al pulsar «Unirse»:
   - Se añade `GamePlayer` con `joined_at = now()`.
   - Si llega a 10 → **auto-start** (ver Fase 2).
-- [ ] 1.5 Cada 5s el bot actualiza el mensaje del lobby con el nuevo contador.
-- [ ] 1.6 Temporizador de expiración: si no se une nadie tras 2 min, el lobby se cierra.
-- [ ] 1.7 Si se pulsa «Iniciar» (host) → saltar a Fase 2.
-- [ ] 1.8 Validaciones:
+- [x] 1.5 Cada 5s el bot actualiza el mensaje del lobby con el nuevo contador.
+- [x] 1.6 Temporizador de expiración: si no se une nadie tras 2 min, el lobby se cierra.
+- [x] 1.7 Si se pulsa «Iniciar» (host) → saltar a Fase 2.
+- [x] 1.8 Validaciones:
   - No se puede unir una partida ya iniciada.
   - Un jugador no puede unirse dos veces.
   - Solo el host puede iniciar (a menos que se cumpla condición de 10 o timeout).
@@ -92,13 +92,13 @@ ESTADO DE LA FASE: LISTA (ver el phase1-guide.md)
 
 ### Tareas
 
-- [ ] 2.1 **Selección de letra (primera ronda):**
+- [x] 2.1 **Selección de letra (primera ronda):**
   - Random con `random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")`.
   - Excluir Ñ (o incluirla según región configurable).
-- [ ] 2.2 **Temporizador de ronda:** 60s controlado con `asyncio.create_task` + `Redis` expiry como fallback.
-- [ ] 2.3 **Plantilla de categorías** (8-12 fijas, ej.):
+- [x] 2.2 **Temporizador de ronda:** 60s controlado con `asyncio.create_task` + `Redis` expiry como fallback.
+- [x] 2.3 **Plantilla de categorías** (8-12 fijas, ej.):
   - Nombre, País/Ciudad, Animal, Comida, Objeto, Profesión, Deporte, Color, Marca, Verbo, Película, Planta.
-- [ ] 2.4 Bot envía mensaje formateado con la letra y las categorías:
+- [x] 2.4 Bot envía mensaje formateado con la letra y las categorías:
   ```
   🛑 Ronda 1 — Letra: **F**
   ⏱ 60 segundos
@@ -110,23 +110,23 @@ ESTADO DE LA FASE: LISTA (ver el phase1-guide.md)
   Animal: ...
   ...
   ```
-- [ ] 2.5 **Parser de respuestas:**
+- [x] 2.5 **Parser de respuestas:**
   - Regex que extrae `categoría: valor`.
   - Ignora mayúsculas/minúsculas, espacios extra.
   - Devuelve `dict[Categoría, str]`.
   - Si el formato no es válido o faltan categorías → respuesta rechazada con botón «Reintentar».
-- [ ] 2.6 **Normalización y fuzzy matching** (ver Fase 4): en esta fase solo guardamos raw_text.
-- [ ] 2.7 **Sistema Stop:**
+- [x] 2.6 **Normalización y fuzzy matching** (ver Fase 4): en esta fase solo guardamos raw_text.
+- [x] 2.7 **Sistema Stop:**
   - Cuando el primer jugador envía una respuesta **completa** (todas las categorías rellenas) → el bot le responde en privado con botón **«⏹ Stop»**.
   - Otros jugadores NO ven este botón.
   - Timeout del botón: 5s.
   - Al pulsar Stop → la ronda se cierra inmediatamente.
   - Si nadie hace Stop → la ronda termina a los 60s.
-- [ ] 2.8 **Cierre de ronda:**
+- [x] 2.8 **Cierre de ronda:**
   - Bot edita el mensaje del grupo: `"⏹ Ronda detenida"` o `"⌛ Tiempo agotado"`.
   - Llama al `ScoreEngine` (Fase 3).
-- [ ] 2.9 **Mostrar puntuación parcial:** Bot envía resumen de puntos de la ronda.
-- [ ] 2.10 **Transición a siguiente ronda:**
+- [x] 2.9 **Mostrar puntuación parcial:** Bot envía resumen de puntos de la ronda.
+- [x] 2.10 **Transición a siguiente ronda:**
   - El líder (máximo puntaje acumulado) recibe inline keyboard con el alfabeto.
   - Selecciona letra → 5s countdown → nueva ronda.
   - Si hay empate, elige el primero en llegar a esa posición.
@@ -144,7 +144,7 @@ ESTADO DE LA FASE: LISTA (ver phase2-guide.md)
 
 ### Tareas
 
-- [ ] 3.1 `ScoreEngine.evaluate(round_id, answers_by_player)`:
+- [x] 3.1 `ScoreEngine.evaluate(round_id, answers_by_player)`:
   - Agrupa respuestas por categoría.
   - Para cada categoría detecta **duplicados exactos** (y fuzzy en Fase 4).
   - Asigna puntos:
@@ -152,21 +152,21 @@ ESTADO DE LA FASE: LISTA (ver phase2-guide.md)
     - `50 / N` si N jugadores dieron la misma respuesta (ej: 3 → 16.66 c/u, truncado a entero o 2 decimales).
     - `0` si vacía o incorrecta.
   - Bonus de velocidad: el jugador que hizo Stop recibe `+10` extra.
-- [ ] 3.2 Criterio de "respuesta correcta":
+- [x] 3.2 Criterio de "respuesta correcta":
   - Por ahora: cualquier palabra que no esté vacía y sea alfabética (+ espacios, guiones).
   - En Fase 4 se añade validación semántica con IA.
-- [ ] 3.3 Persistencia: guardar `Answer.score`, `Answer.is_correct`.
-- [ ] 3.4 `ScoreEngine.apply_bonus(round_id)`:
+- [x] 3.3 Persistencia: guardar `Answer.score`, `Answer.is_correct`.
+- [x] 3.4 `ScoreEngine.apply_bonus(round_id)`:
   - Si un jugador responde todas las categorías antes que nadie y pulsa Stop → bonus +10.
-- [ ] 3.5 Al final de cada ronda: actualizar `GamePlayer.score`.
-- [ ] 3.6 Al final de la partida (5 rondas):
+- [x] 3.5 Al final de cada ronda: actualizar `GamePlayer.score`.
+- [x] 3.6 Al final de la partida (5 rondas):
   - Calcular ganador.
   - Persistir `Game.status = finished`, `Game.finished_at`.
   - Resumen final con podio: 🥇 🥈 🥉.
 
 **Entregable:** Puntuación correcta con duplicados, bonus y resumen.
 
-ESTADO DE LA FASE: EN GUIA (ver phase3-guide.md)
+ESTADO DE LA FASE: LISTA (ver phase3-guide.md)
 
 
 ## Fase 4 — Corrector ortográfico con IA / Fuzzy Matching
@@ -175,42 +175,37 @@ ESTADO DE LA FASE: EN GUIA (ver phase3-guide.md)
 
 ### Tareas
 
-- [ ] 4.1 **Pipeline de normalización:**
+- [x] 4.1 **Pipeline de normalización:**
   1. Strip, lower, eliminar tildes (transliteración básica: `á → a`).
   2. Eliminar signos de puntuación redundantes.
   3. Tokenizar.
 
-- [ ] 4.2 **Fuzzy matching entre respuestas de la misma categoría:**
+- [x] 4.2 **Fuzzy matching entre respuestas de la misma categoría:**
   - Usar `rapidfuzz` (Levenshtein ratio): si `ratio >= 0.75` → considerar misma palabra.
   - Ej: `Fernando`, `Fenando`, `FERNANDO`, `felnando` → misma respuesta.
 
-- [ ] 4.3 **Corrección ortográfica por palabra (opcional, nivel IA):**
+- [x] 4.3 **Corrección ortográfica por palabra (opcional, nivel IA):**
   - `spaCy` + `symspellpy` para sugerir la palabra canónica.
   - O llamada a OpenAI / Gemini API: `"Corrige esta palabra al español correcto: {word}"`.
   - Cache en Redis de `{raw: corrected}` para evitar llamadas repetidas.
 
-- [ ] 4.4 **Validación semántica:**
+- [x] 4.4 **Validación semántica:**
   - ¿La palabra pertenece realmente a la categoría?
   - Opción A: Usar LLM (`"¿'{word}' es un {categoria}? Responde solo sí o no"`).
   - Opción B: Lista de palabras conocidas por categoría (seed inicial + grow).
 
-- [ ] 4.5 **Modo híbrido:**
+- [x] 4.5 **Modo híbrido:**
   - Intentar fuzzy matching local primero.
   - Si match < 0.75, caer en LLM para corrección.
   - Configurable por variable de entorno: `SPELL_MODE=local|ai|hybrid`.
 
-- [ ] 4.6 Límite por ronda de llamadas a API externa para control de costes.
+- [x] 4.6 Límite por ronda de llamadas a API externa para control de costes.
 
 **Entregable:** Respuestas corregidas y normalizadas; duplicados detectados fuzzy.
 
-ESTADO DE LA FASE: EN GUIA (ver phase4-guide.md)
+ESTADO DE LA FASE: LISTA (ver phase4-guide.md)
+
 ---
-
-Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
-
-
-
-Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Fase 4B — Word Lists en Base de Datos
 
@@ -218,20 +213,72 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
 
 ### Tareas
 
-- [ ] 4B.1 Crear modelo `WordListItem` en SQLAlchemy (categoría, palabra, normalized)
-- [ ] 4B.2 Crear migración Alembic y ejecutarla
-- [ ] 4B.3 Crear `WordListRepository` (CRUD de palabras por categoría)
-- [ ] 4B.4 Crear datos semilla completos (~100 colores, ~90 frutas, ~200 países con variantes)
-- [ ] 4B.5 Crear script `seed_word_lists.py` idempotente
-- [ ] 4B.6 Añadir a `SpellCorrector`: `load_db_word_lists()`, `validate_against_list()`, `is_db_category()`
-- [ ] 4B.7 Quitar color/fruta/pais de `SEED_WORDS` (dejar sets vacíos, se cargan desde BD)
-- [ ] 4B.8 Pasar `category` a `_determine_answer_scores_fuzzy` y validar contra word list
-- [ ] 4B.9 Llamar `load_db_word_lists()` en `on_startup` del bot
-- [ ] 4B.10 Tests: repositorio, validate_against_list, score engine con validación
+- [x] 4B.1 Crear modelo `WordListItem` en SQLAlchemy (categoría, palabra, normalized)
+- [x] 4B.2 Crear migración Alembic y ejecutarla
+- [x] 4B.3 Crear `WordListRepository` (CRUD de palabras por categoría)
+- [x] 4B.4 Crear datos semilla completos (~100 colores, ~90 frutas, ~200 países con variantes)
+- [x] 4B.5 Crear script `seed_word_lists.py` idempotente
+- [x] 4B.6 Añadir a `SpellCorrector`: `load_db_word_lists()`, `validate_against_list()`, `is_db_category()`
+- [x] 4B.7 Quitar color/fruta/pais de `SEED_WORDS` (dejar sets vacíos, se cargan desde BD)
+- [x] 4B.8 Pasar `category` a `_determine_answer_scores_fuzzy` y validar contra word list
+- [x] 4B.9 Llamar `load_db_word_lists()` en `on_startup` del bot
+- [x] 4B.10 Tests: repositorio, validate_against_list, score engine con validación
 
 **Entregable:** Color, fruta y país validados contra BD con fuzzy matching; 215+ tests pasando.
 
-ESTADO DE LA FASE: EN GUIA (ver phase4b-guide.md)
+ESTADO DE LA FASE: LISTA (ver phase4b-guide.md)
+
+---
+
+## Fase 4C — Módulo de Feedback Inteligente Local (ErrorTracker)
+
+**Objetivo:** Crear un sistema de tracking de errores local (sin IA externa) que capture todas las excepciones no manejadas del bot, las persista en PostgreSQL, las clasifique contra una lookup table de soluciones conocidas, y exponga un comando `/diagnose` para que el host obtenga un informe con sugerencias de fix.
+
+### Tareas
+
+- [x] 4C.1 Crear modelo `ErrorLog` en SQLAlchemy (timestamp, level, handler, user_id, game_id, telegram_id, exception_type, exception_message, traceback, context JSON, resolved, resolution)
+- [x] 4C.2 Crear `ErrorLogRepository` con 9 métodos CRUD
+- [x] 4C.3 Registrar repositorio en `src/db/repositories/__init__.py`
+- [x] 4C.4 Crear `ErrorTracker` singleton con `capture_exception()`, `track_errors()`, `generate_report()`
+- [x] 4C.5 Crear `KNOWN_SOLUTIONS` lookup table (16+ entradas con solución + severidad)
+- [x] 4C.6 Registrar `ErrorTracker` en `src/services/__init__.py`
+- [x] 4C.7 Crear handler `/diagnose` (reporte completo)
+- [x] 4C.8 Crear handler `/errors` (lista errores sin resolver)
+- [x] 4C.9 Crear handler `/resolve` (marcar como resueltos)
+- [x] 4C.10 Registrar `diagnose_router` en `src/bot.py`
+- [x] 4C.11 Aplicar `@track_errors` a todos los handlers de lobby (4) y ronda (6)
+- [x] 4C.12 Captura automática en `UserExistsMiddleware`
+- [x] 4C.13 Tests: error_tracker (13 tests), error_log_repository (3 tests de integración)
+
+**Entregable:** Sistema de error tracking local funcional; 246 tests pasando, 0 failures.
+
+ESTADO DE LA FASE: LISTA (ver phase4c-guide.md)
+
+---
+
+## Fase 4D — Smoke Test Completo en Telegram
+
+**Objetivo:** Validar que todas las funcionalidades del bot funcionan correctamente en un entorno real de Telegram, incluyendo el sistema de error tracking (Phase 4C), antes de considerar el MVP como estable.
+
+### Tareas
+
+- [x] 4D.1 Verificar infraestructura (PostgreSQL, Redis, bot auth, word lists)
+- [x] 4D.2 Ejecutar suite de tests automatizados (246 tests, 0 failures)
+- [ ] 4D.3 Smoke test básico de comandos (/start, /help, /cancel) — requiere Telegram
+- [ ] 4D.4 Smoke test ErrorTracker (/diagnose, /errors, /resolve sin errores) — requiere Telegram
+- [ ] 4D.5 Flujo completo de partida (crear lobby, unirse, 5 rondas, podio) — requiere Telegram
+- [ ] 4D.6 Verificar líder/transición entre rondas — requiere Telegram
+- [ ] 4D.7 Verificar inter-round menu (avanzar/detener) — requiere Telegram
+- [ ] 4D.8 Verificar selección de letra y timeout — requiere Telegram
+- [x] 4D.9 Prueba de ErrorTracker con errores inyectados en BD
+- [ ] 4D.10 Prueba de ErrorTracker forzando caída de PostgreSQL — requiere Docker+Telegram
+- [ ] 4D.11 Verificar casos borde (lobby expirado, respuestas inválidas, duplicados, timeouts) — requiere Telegram
+- [x] 4D.12 Ejecutar script de smoke test automatizado
+- [ ] 4D.13 Completar lista de verificación de regresión (100%) — requiere Telegram
+
+**Entregable:** Bot verificado en Telegram — todos los comandos, flujos y ErrorTracker funcionan correctamente.
+
+ESTADO DE LA FASE: EN GUIA (ver phase4d-guide.md) — chequeos automáticos completados.
 
 ---
 

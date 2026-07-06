@@ -7,6 +7,7 @@ from aiogram.types import CallbackQuery, Message
 
 from src.utils import delete_after
 from src.db.models import Player
+from src.services.error_tracker import error_tracker
 from src.services.game_orchestrator import lobby_manager
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ game_router = Router()
 
 
 @game_router.message(Command("stop"))
+@error_tracker.track_errors(handler_name="cmd_stop")
 async def cmd_stop(message: Message, player: Player, bot: Bot) -> None:
     if message.chat.type == "private":
         msg = await message.answer("❌ Este comando solo funciona en grupos.")
@@ -34,6 +36,7 @@ async def cmd_stop(message: Message, player: Player, bot: Bot) -> None:
 
 
 @game_router.message(Command("cancel"))
+@error_tracker.track_errors(handler_name="cmd_cancel")
 async def cmd_cancel(message: Message, player: Player, bot: Bot) -> None:
     if message.chat.type == "private":
         msg = await message.answer("⚠️ Este comando solo funciona en grupos.")
@@ -48,6 +51,7 @@ async def cmd_cancel(message: Message, player: Player, bot: Bot) -> None:
 
 
 @game_router.callback_query(F.data.startswith("join:"))
+@error_tracker.track_errors(handler_name="callback_join")
 async def callback_join(callback: CallbackQuery, player: Player, bot: Bot) -> None:
     try:
         game_id = int(callback.data.split(":")[1])
@@ -67,6 +71,7 @@ async def callback_join(callback: CallbackQuery, player: Player, bot: Bot) -> No
 
 
 @game_router.callback_query(F.data.startswith("start:"))
+@error_tracker.track_errors(handler_name="callback_start")
 async def callback_start(callback: CallbackQuery, player: Player, bot: Bot) -> None:
     try:
         game_id = int(callback.data.split(":")[1])

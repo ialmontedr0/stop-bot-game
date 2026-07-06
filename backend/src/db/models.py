@@ -136,3 +136,24 @@ class WordListItem(Base):
 
     def __repr__(self) -> str:
         return f"<WordListItem id={self.id} cat={self.category} word={self.word}>"
+
+
+class ErrorLog(Base):
+    __tablename__ = "error_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(default=func.now(), index=True)
+    level: Mapped[str] = mapped_column(String(20), default="ERROR")
+    handler: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    game_id: Mapped[Optional[int]] = mapped_column(nullable=True, index=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    exception_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    exception_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    traceback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
+    resolved: Mapped[bool] = mapped_column(default=False)
+    resolution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<ErrorLog id={self.id} type={self.exception_type}>"

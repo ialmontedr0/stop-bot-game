@@ -1,13 +1,15 @@
 from .base import BaseRepository
-from .player_repository import PlayerRepository
+from .error_log_repository import ErrorLogRepository
 from .game_repository import GameRepository
+from .player_repository import PlayerRepository
 from .round_repository import RoundRepository
 from .word_list_repository import WordListRepository
 
 __all__ = [
     "BaseRepository",
-    "PlayerRepository",
+    "ErrorLogRepository",
     "GameRepository",
+    "PlayerRepository",
     "RoundRepository",
     "WordListRepository",
 ]

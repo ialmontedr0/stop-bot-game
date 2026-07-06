@@ -4,6 +4,7 @@ from aiogram import Bot, Router, F
 from aiogram.types import CallbackQuery, Message
 
 from src.db.models import Player
+from src.services.error_tracker import error_tracker
 from src.services.round_manager import (
     round_manager,
     ALPHABET,
@@ -15,6 +16,7 @@ round_router = Router()
 
 
 @round_router.message(F.text, F.chat.type.in_({"group", "supergroup"}))
+@error_tracker.track_errors(handler_name="handle_round_answer")
 async def handle_round_answer(message: Message, player: Player, bot: Bot) -> None:
     if message.text.startswith("/"):
         return
@@ -41,6 +43,7 @@ async def handle_round_answer(message: Message, player: Player, bot: Bot) -> Non
 
 
 @round_router.callback_query(F.data.startswith("stop:"))
+@error_tracker.track_errors(handler_name="callback_stop")
 async def callback_stop(callback: CallbackQuery, player: Player, bot: Bot) -> None:
     try:
         _, game_id_str, _ = callback.data.split(":")
@@ -58,6 +61,7 @@ async def callback_stop(callback: CallbackQuery, player: Player, bot: Bot) -> No
 
 
 @round_router.callback_query(F.data.startswith("letter:"))
+@error_tracker.track_errors(handler_name="callback_letter")
 async def callback_letter(callback: CallbackQuery, player: Player, bot: Bot) -> None:
     try:
         _, game_id_str, letter = callback.data.split(":")
@@ -80,6 +84,7 @@ async def callback_letter(callback: CallbackQuery, player: Player, bot: Bot) -> 
 
 
 @round_router.callback_query(F.data.startswith("next_round:"))
+@error_tracker.track_errors(handler_name="callback_next_round")
 async def callback_next_round(callback: CallbackQuery, player: Player, bot: Bot) -> None:
     try:
         _, game_id_str = callback.data.split(":")
@@ -97,6 +102,7 @@ async def callback_next_round(callback: CallbackQuery, player: Player, bot: Bot)
 
 
 @round_router.callback_query(F.data.startswith("stop_game:"))
+@error_tracker.track_errors(handler_name="callback_stop_game")
 async def callback_stop_game(callback: CallbackQuery, player: Player, bot: Bot) -> None:
     try:
         _, game_id_str = callback.data.split(":")

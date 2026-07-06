@@ -28,6 +28,16 @@ class UserExistsMiddleware(BaseMiddleware):
                     data["player"] = player
             except Exception:
                 logger.exception("Error al obtener/crear jugador %s", user.id)
+                try:
+                    from src.services.error_tracker import error_tracker
+                    await error_tracker.capture_exception(
+                        exc=Exception(),
+                        handler="UserExistsMiddleware",
+                        telegram_id=user.id if user else None,
+                        context={"middleware": "user_exists"},
+                    )
+                except Exception:
+                    pass
                 bot = data.get("bot")
                 if bot and user:
                     try:
