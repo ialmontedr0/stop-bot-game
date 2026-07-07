@@ -61,10 +61,9 @@ class ErrorLogRepository:
         return list(result.scalars().all())
 
     async def get_recent(self, minutes: int = 60, limit: int = 50) -> list[ErrorLog]:
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes)
         stmt = (
             select(ErrorLog)
-            .where(ErrorLog.timestamp >= cutoff)
+            .where(ErrorLog.timestamp >= func.now() - timedelta(minutes=minutes))
             .order_by(ErrorLog.timestamp.desc())
             .limit(limit)
         )

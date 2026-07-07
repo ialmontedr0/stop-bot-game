@@ -6,6 +6,7 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -26,10 +27,14 @@ class Player(Base):
     language_code: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=func.now())
 
-    game_players: Mapped[list["GamePlayer"]] = relationship(back_populates="player")
-    answers: Mapped[list["Answer"]] = relationship(back_populates="player")
+    game_players: Mapped[list["GamePlayer"]] = relationship(
+        back_populates="player", cascade="all, delete-orphan"
+    )
+    answers: Mapped[list["Answer"]] = relationship(
+        back_populates="player", cascade="all, delete-orphan"
+    )
     weekly_leaderboards: Mapped[list["WeeklyLeaderboard"]] = relationship(
-        back_populates="player"
+        back_populates="player", cascade="all, delete-orphan"
     )
 
 
@@ -44,50 +49,68 @@ class Game(Base):
     created_at: Mapped[datetime] = mapped_column(default=func.now())
     finished_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
-    players: Mapped[list["GamePlayer"]] = relationship(back_populates="game")
-    rounds: Mapped[list["Round"]] = relationship(back_populates="game")
+    players: Mapped[list["GamePlayer"]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
+    rounds: Mapped[list["Round"]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
 
 
 class GamePlayer(Base):
     __tablename__ = "game_players"
 
+    __table_args__ = (UniqueConstraint("game_id", "player_id", name="uq_game_player"),)
+
     id: Mapped[int] = mapped_column(primary_key=True)
-    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
     score: Mapped[int] = mapped_column(default=0)
     joined_at: Mapped[datetime] = mapped_column(default=func.now())
     is_host: Mapped[bool] = mapped_column(default=False)
 
     game: Mapped["Game"] = relationship(back_populates="players")
     player: Mapped["Player"] = relationship(back_populates="game_players")
-    answers: Mapped[list["Answer"]] = relationship(back_populates="game_player")
+    answers: Mapped[list["Answer"]] = relationship(
+        back_populates="game_player", cascade="all, delete-orphan"
+    )
 
 
 class Round(Base):
     __tablename__ = "rounds"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id", ondelete="CASCADE"), index=True
+    )
     round_number: Mapped[int]
     letter: Mapped[str] = mapped_column(String(1))
     status: Mapped[str] = mapped_column(String(20), default="waiting")
     started_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     stopped_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     stopped_by_player_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("players.id"), nullable=True
+        ForeignKey("players.id", ondelete="SET NULL"), nullable=True
     )
 
     game: Mapped["Game"] = relationship(back_populates="rounds")
-    answers: Mapped[list["Answer"]] = relationship(back_populates="round")
+    answers: Mapped[list["Answer"]] = relationship(
+        back_populates="round", cascade="all, delete-orphan"
+    )
 
 
 class Answer(Base):
     __tablename__ = "answers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), index=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
-    game_player_id: Mapped[int] = mapped_column(ForeignKey("game_players.id"))
+    round_id: Mapped[int] = mapped_column(
+        ForeignKey("rounds.id", ondelete="CASCADE"), index=True
+    )
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), index=True
+    )
+    game_player_id: Mapped[int] = mapped_column(
+        ForeignKey("game_players.id", ondelete="CASCADE")
+    )
     word_slot: Mapped[str] = mapped_column(String(64))
     raw_text: Mapped[str] = mapped_column(String(256))
     normalized_text: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
@@ -103,8 +126,12 @@ class Answer(Base):
 class WeeklyLeaderboard(Base):
     __tablename__ = "weekly_leaderboards"
 
+    __table_args__ = (
+        UniqueConstraint("player_id", "week_start", name="uq_player_week"),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
     week_start: Mapped[date] = mapped_column(default=func.current_date())
     total_score: Mapped[int] = mapped_column(default=0)
     games_played: Mapped[int] = mapped_column(default=0)
@@ -123,15 +150,23 @@ class GroupConfig(Base):
     categories: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     include_n: Mapped[bool] = mapped_column(default=False)
     language: Mapped[str] = mapped_column(String(8), default="es")
+    validation_mode: Mapped[Optional[str]] = mapped_column(
+        String(16), default="local", nullable=True
+    )
 
 
 class WordListItem(Base):
     __tablename__ = "word_list_items"
 
+    __table_args__ = (
+        UniqueConstraint("category", "normalized", name="uq_category_word"),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True)
     category: Mapped[str] = mapped_column(String(32), index=True)
     word: Mapped[str] = mapped_column(String(128))
     normalized: Mapped[str] = mapped_column(String(128), index=True)
+    source: Mapped[str] = mapped_column(String(16), default="seed")
     created_at: Mapped[datetime] = mapped_column(default=func.now())
 
     def __repr__(self) -> str:
@@ -145,7 +180,9 @@ class ErrorLog(Base):
     timestamp: Mapped[datetime] = mapped_column(default=func.now(), index=True)
     level: Mapped[str] = mapped_column(String(20), default="ERROR")
     handler: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True, index=True
+    )
     game_id: Mapped[Optional[int]] = mapped_column(nullable=True, index=True)
     telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     exception_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)

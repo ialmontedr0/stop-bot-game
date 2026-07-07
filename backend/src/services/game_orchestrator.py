@@ -10,10 +10,15 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import CallbackQuery
 
 from src.db.engine import async_session_factory
-from src.db.models import Game, GamePlayer, Player
+from src.db.models import GamePlayer, GroupConfig, Player
 from src.db.repositories import GameRepository
 from src.keyboards.lobby import lobby_keyboard
-from src.services.round_manager import round_manager, TOTAL_ROUNDS, ALPHABET, PLACEHOLDER
+from src.services.round_manager import (
+    round_manager,
+    TOTAL_ROUNDS,
+    ALPHABET,
+    PLACEHOLDER,
+)
 
 
 MAX_PLAYERS = 10
@@ -72,7 +77,10 @@ class LobbyManager:
 
             existing = await repo.get_active_game(group_chat_id)
             if existing:
-                if existing.status == STATUS_LOBBY and group_chat_id not in self._lobbies:
+                if (
+                    existing.status == STATUS_LOBBY
+                    and group_chat_id not in self._lobbies
+                ):
                     await repo.update_game_status(existing, STATUS_CANCELLED)
                 else:
                     return "⚠️ Ya hay una sala abierta en este grupo."
@@ -323,15 +331,38 @@ class LobbyManager:
             for game in stale:
                 await repo.update_game_status(game, STATUS_CANCELLED)
                 logger.info("Partida %s cancelada por stale", game.id)
+                
+    
+    @staticmethod
+    async def _get_group_config(group_chat_id: int) -> Optional[GroupConfig]:
+        async with async_session_factory() as session:
+            stmt = select(GroupConfig).where(
+                GroupConfig.group_chat_id == group_chat_id
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     # --- Iniciar partida -------------------------------------------------------
     async def _do_start(self, state: LobbyState, bot: Bot) -> None:
         if state.started:
-            logger.warning("_do_start llamado múltiples veces para game %s", state.game_id)
+            logger.warning(
+                "_do_start llamado múltiples veces para game %s", state.game_id
+            )
             return
         state.started = True
-
         self._cleanup(state)
+
+        # --- Leer validation_mode del grupo ----------------
+        group_config = await self._get_group_config(state.group_chat_id)
+        validation_mode = group_config.validation_mode if group_config else "local"
+
+        from src.services.spell_corrector import get_corrector
+
+        corrector = get_corrector()
+        corrector.mode = validation_mode
+        logger.info(
+            "Modo validacion para grupo %s: %s", state.group_chat_id, validation_mode
+        )
 
         try:
             await bot.delete_message(
@@ -340,9 +371,7 @@ class LobbyManager:
         except TelegramBadRequest:
             pass
 
-        player_names = dict(
-            zip(state.player_telegram_ids, state.player_display_names)
-        )
+        player_names = dict(zip(state.player_telegram_ids, state.player_display_names))
 
         participants = "\n".join(
             f"  {i + 1}. {name}" for i, name in enumerate(state.player_display_names)

@@ -14,6 +14,7 @@ from src.db.engine import engine
 from src.handlers.group import group_router
 from src.handlers.start import start_router
 from src.handlers.game import diagnose_router, game_router, round_router
+from src.handlers.game.settings import settings_router
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
 from src.services.game_orchestrator import game_orchestrator
@@ -79,11 +80,21 @@ async def main() -> None:
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
     print("[BOOT] Conectando a Redis...", flush=True)
-    _redis_client = AsyncRedis.from_url(settings.redis_url)
-    await _redis_client.ping()
-    print("[BOOT] Redis OK", flush=True)
+    try:
+        _redis_client = AsyncRedis.from_url(settings.redis_url)
+        await _redis_client.ping()
+        print("[BOOT] Redis OK", flush=True)
+    except Exception as e:
+        print(f"[BOOT] ERROR: Redis no disponible: {e}", flush=True)
+        print("[BOOT] El bot continuará sin Redis (sin FSM persistente)", flush=True)
+        _redis_client = None
 
-    storage = RedisStorage(redis=_redis_client)
+    if _redis_client:
+        storage = RedisStorage(redis=_redis_client)
+    else:
+        from aiogram.fsm.storage.memory import MemoryStorage
+
+        storage = MemoryStorage()
 
     print("[BOOT] Autenticando con Telegram...", flush=True)
     bot = Bot(
@@ -103,6 +114,7 @@ async def main() -> None:
     dp.include_router(game_router)
     dp.include_router(round_router)
     dp.include_router(diagnose_router)
+    dp.include_router(settings_router)
 
     throttle_mw = ThrottlingMiddleware()
     user_exists = UserExistsMiddleware()
@@ -114,7 +126,7 @@ async def main() -> None:
 
     print("[BOOT] Iniciando polling...", flush=True)
     logger.info("Iniciando polling...")
-    await dp.start_polling(bot, skip_updates=True)
+    await dp.start_polling(bot, skip_updates=False)
 
 
 if __name__ == "__main__":

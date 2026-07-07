@@ -158,21 +158,39 @@ def _determine_answer_scores_fuzzy(
         count = len(cluster)
         if count == 1:
             pid = next(iter(cluster))
-            answer = next(ans for p, ans in player_answers if p == pid)
-            txt = answer.raw_text.strip()
+            answer = next(
+                (ans for p, ans in player_answers if p == pid), None
+            )
+            txt = (answer.raw_text.strip() if answer else "")
             if txt and _is_valid_word(txt, letter=letter):
                 result[pid] = (True, UNIQUE_POINTS)
             else:
                 result[pid] = (False, 0)
         else:
+            # Verificar que al menos una respuesta en el cluster sea valida
+            any_valid = False
+            for pid in cluster:
+                answer = next(
+                    (ans for p, ans in player_answers if p == pid), None
+                )
+                txt = (answer.raw_text.strip() if answer else "")
+                if txt and _is_valid_word(txt, letter=letter):
+                    any_valid = True
+                    break
+            if not any_valid:
+                for pid in cluster:
+                    result[pid] = (False, 0)
+                continue
             share = UNIQUE_POINTS // count
             for pid in cluster:
                 result[pid] = (False, share)
 
     for pid in all_pids:
         if pid not in result:
-            answer = next(ans for p, ans in player_answers if p == pid)
-            txt = answer.raw_text.strip()
+            answer = next(
+                (ans for p, ans in player_answers if p == pid), None
+            )
+            txt = (answer.raw_text.strip() if answer else "")
             if txt and _is_valid_word(txt, letter=letter):
                 result[pid] = (True, UNIQUE_POINTS)
             else:
@@ -207,15 +225,24 @@ class ScoreEngine:
                 totals[pid] += cat_score
                 ans = answers_by_pid.get(pid)
                 if ans is not None:
-                    details[pid].append(
-                        {
-                            "answer_id": ans.id,
-                            "word_slot": canonical_cat,
-                            "raw_text": ans.raw_text,
-                            "is_correct": cat_score > 0,
-                            "score": cat_score,
-                        }
-                    )
+                    detail_entry = {
+                        "answer_id": ans.id,
+                        "word_slot": canonical_cat,
+                        "raw_text": ans.raw_text,
+                        "is_correct": cat_score > 0,
+                        "score": cat_score,
+                    }
+                    # Validation source tracking
+                    if spell_corrector is not None and hasattr(
+                        spell_corrector, "get_validation_source"
+                    ):
+                        norm = spell_corrector.normalize(ans.raw_text)
+                        cat_norm = spell_corrector._normalize_category(canonical_cat)
+                        source = spell_corrector.get_validation_source(
+                            f"{cat_norm}:{norm}"
+                        )
+                        detail_entry["validation_source"] = source
+                    details[pid].append(detail_entry)
 
         for pid in answers_by_player:
             if pid not in totals:

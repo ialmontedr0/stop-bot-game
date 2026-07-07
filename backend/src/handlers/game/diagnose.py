@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Router, F
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from src.db.engine import async_session_factory
@@ -32,7 +32,7 @@ async def cmd_diagnose(message: Message) -> None:
             if game:
                 game_id = game.id
     except Exception:
-        pass
+        logger.exception("Error al obtener juego activo para /diagnose")
 
     report = await error_tracker.generate_report(
         game_id=game_id,
@@ -44,14 +44,16 @@ async def cmd_diagnose(message: Message) -> None:
         await message.reply(report)
     else:
         parts = [report[i:i + MAX_LENGTH] for i in range(0, len(report), MAX_LENGTH)]
-        header = await message.reply(parts[0])
-        for part in parts[1:]:
-            await message.answer(part)
-        asyncio.create_task(delete_after(header, delay=60))
+        for i, part in enumerate(parts):
+            if i == 0:
+                msg = await message.reply(part)
+            else:
+                msg = await message.answer(part)
+            asyncio.create_task(delete_after(msg, delay=60))
 
 
 @diagnose_router.message(Command("resolve"))
-async def cmd_resolve(message: Message) -> None:
+async def cmd_resolve(message: Message, command: CommandObject) -> None:
     """Marca todos los errores no resueltos como resueltos.
     Uso: /resolve [reason opcional]
     """
@@ -60,7 +62,7 @@ async def cmd_resolve(message: Message) -> None:
         asyncio.create_task(delete_after(msg))
         return
 
-    reason = message.text.removeprefix("/resolve").strip()
+    reason = command.args.strip() if command.args else ""
     if not reason:
         reason = "Resuelto manualmente por el host."
 

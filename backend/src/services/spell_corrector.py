@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import re
 from typing import Optional
 
@@ -11,186 +12,14 @@ logger = logging.getLogger(__name__)
 # Se autoexpanden con respuestas validadas durante el juego.
 
 SEED_WORDS: dict[str, set[str]] = {
-    "nombre": {
-        "juan",
-        "maria",
-        "carlos",
-        "ana",
-        "pedro",
-        "laura",
-        "diego",
-        "sofia",
-        "pablo",
-        "elena",
-        "fernando",
-        "luis",
-        "carmen",
-        "javier",
-        "isabel",
-        "miguel",
-        "rosa",
-        "antonio",
-        "marta",
-        "jose",
-        "francisco",
-        "manuel",
-        "dolores",
-        "jesus",
-        "margarita",
-        "ricardo",
-        "patricia",
-        "roberto",
-        "monica",
-        "alejandro",
-        "silvia",
-        "andres",
-        "veronica",
-        "sergio",
-        "claudia",
-        "jorge",
-        "beatriz",
-        "raul",
-        "gloria",
-        "alberto",
-        "alicia",
-    },
-    "apellido": {
-        "garcia",
-        "rodriguez",
-        "martinez",
-        "lopez",
-        "gonzalez",
-        "hernandez",
-        "perez",
-        "sanchez",
-        "ramirez",
-        "torres",
-        "flores",
-        "rivera",
-        "gomez",
-        "diaz",
-        "moreno",
-        "jimenez",
-        "ruiz",
-        "alvarez",
-        "romero",
-        "navarro",
-        "castro",
-        "ortega",
-        "mendoza",
-        "delgado",
-        "reyes",
-        "vargas",
-        "herrera",
-        "medina",
-        "cruz",
-        "morales",
-        "ortiz",
-        "marin",
-        "campos",
-        "nunez",
-        "ibanez",
-        "vega",
-        "soto",
-        "munoz",
-        "rivas",
-        "aguilar",
-    },
+    "nombre": set(),
+    "apellido": set(),
     "color": set(),
     "fruta": set(),
     "pais": set(),
-    "artista": {
-        "shakira",
-        "botero",
-        "dali",
-        "picasso",
-        "van gogh",
-        "frida kahlo",
-        "monet",
-        "rembrandt",
-        "da vinci",
-        "miguel angel",
-        "velazquez",
-        "goya",
-        "matisse",
-        "pollock",
-        "warhol",
-        "klimt",
-        "cesar",
-        "cerati",
-        "mercedes sosa",
-        "atahualpa yupanqui",
-        "gardel",
-        "cortazar",
-        "borges",
-        "neruda",
-        "garcia marquez",
-        "messi",
-        "maradona",
-    },
-    "novela/serie": {
-        "cien anos de soledad",
-        "don quijote",
-        "la casa de los espiritus",
-        "rayuela",
-        "el amor en los tiempos del colera",
-        "los simpson",
-        "friends",
-        "breaking bad",
-        "game of thrones",
-        "stranger things",
-        "la casa de papel",
-        "el chavo",
-        "el principito",
-        "1984",
-        "crimen y castigo",
-        "orgullo y prejuicio",
-        "matar a un ruisenor",
-        "harry potter",
-        "el senor de los anillos",
-        "cancion de hielo y fuego",
-    },
-    "cosa": {
-        "mesa",
-        "silla",
-        "cama",
-        "coche",
-        "casa",
-        "libro",
-        "lapiz",
-        "computadora",
-        "telefono",
-        "reloj",
-        "zapato",
-        "camisa",
-        "plato",
-        "vaso",
-        "llave",
-        "bolsa",
-        "ventana",
-        "puerta",
-        "lampara",
-        "cuchara",
-        "tenedor",
-        "cuchillo",
-        "tv",
-        "television",
-        "radio",
-        "bicicleta",
-        "moto",
-        "avion",
-        "barco",
-        "tren",
-        "pelota",
-        "guitarra",
-        "piano",
-        "bateria",
-        "sofa",
-        "armario",
-        "estante",
-        "cuadro",
-        "espejo",
-    },
+    "artista": set(),
+    "novela/serie": set(),
+    "cosa": set(),
 }
 
 
@@ -206,7 +35,18 @@ class SpellCorrector:
     MODE_LOCAL = "local"
     MODE_AI = "ai"
     MODE_HYBRID = "hybrid"
-    DB_CATEGORIES = {"color", "fruta", "pais", "país"}
+    DB_CATEGORIES = {
+        "color",
+        "fruta",
+        "pais",
+        "nombre",
+        "apellido",
+        "artista",
+        "novela/serie",
+        "cosa",
+    }
+    PROVIDER_OPENAI = "openai"
+    PROVIDER_GEMINI = "gemini"
 
     def __init__(
         self,
@@ -216,6 +56,8 @@ class SpellCorrector:
         api_url: Optional[str] = None,
         api_limit: int = 20,
         fuzzy_threshold: int = 75,
+        ai_provider: str = "openai",
+        ai_model: Optional[str] = None,
     ) -> None:
         self.mode = mode
         self._redis_url = redis_url
@@ -224,20 +66,44 @@ class SpellCorrector:
         self.api_url = api_url
         self.api_limit = api_limit
         self.fuzzy_threshold = fuzzy_threshold
+        self.ai_provider = ai_provider
+        self.ai_model = ai_model or self._default_model()
         self._api_calls: int = 0
+        self._api_failed: int = 0
+        self._validation_source: dict[str, str] = {}
         # Deep-copy seed words para evitar mutacion global
         self._word_lists: dict[str, set[str]] = {
             cat: set(words) for cat, words in SEED_WORDS.items()
         }
 
+    def _default_model(self) -> str:
+        return (
+            "gemini-2.0-flash"
+            if self.ai_provider == self.PROVIDER_GEMINI
+            else "gpt-4o-mini"
+        )
+
     # --- API calls tracking --------------------------------------------------------
 
     def reset_api_counter(self) -> None:
         self._api_calls = 0
+        self._api_failed = 0
+        self._validation_source.clear()
 
     @property
     def api_calls_remaining(self) -> int:
         return max(0, self.api_limit - self._api_calls)
+
+    @property
+    def api_calls_total(self) -> int:
+        return self._api_calls
+
+    @property
+    def api_calls_failed(self) -> int:
+        return self._api_failed
+
+    def get_validation_source(self, key: str) -> str:
+        return self._validation_source.get(key, "default")
 
     # --- Redis ----------------------------------------------------------------------
 
@@ -320,7 +186,7 @@ class SpellCorrector:
             if _is_valid_word(ans.raw_text)
         ]
         if not valid:
-            return [{pid for pid, _, _ in answers}]
+            return [{pid} for pid, _, _ in answers]
 
         # Fase 1: exact match clusters
         exact: dict[str, set[int]] = {}
@@ -389,12 +255,12 @@ class SpellCorrector:
             return norm
 
         # 2 - Fuzzy match contra word list
-        if cat_words:
+        if cat_words and self.mode != self.MODE_AI:
             best, score = self.fuzzy_match(word, list(cat_words))
             if best is not None:
                 best_norm = self.normalize(best)
-                # Aprendizaje: anadir a word list
-                cat_words.add(norm)
+                cat_words.add(best_norm)
+                asyncio.ensure_future(self.add_to_word_list_persistent(best, category))
                 return best_norm
 
         # 3 - AI correccion (solo en modo AI o hybryd)
@@ -411,6 +277,9 @@ class SpellCorrector:
                     decoded = cached.decode() if isinstance(cached, bytes) else cached
                     if decoded:
                         cat_words.add(decoded)
+                        asyncio.create_task(
+                            self.add_to_word_list_persistent(word, category)
+                        )
                         return decoded
 
             corrected = await self._ai_correct(word)
@@ -418,10 +287,15 @@ class SpellCorrector:
                 self._api_calls += 1
                 corrected_norm = self.normalize(corrected)
                 cat_words.add(corrected_norm)
+                asyncio.create_task(
+                    self.add_to_word_list_persistent(word, category)
+                )
                 # Cachear en Redis (1 hora)
                 if redis:
                     await redis.setex(cache_key, 3600, corrected_norm)
                 return corrected_norm
+            else:
+                self._api_failed += 1
 
         # 4 - Fallback
         return norm
@@ -446,9 +320,24 @@ class SpellCorrector:
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             }
-            payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
+
+            model = self.ai_model
+            is_gemini = self.ai_provider == self.PROVIDER_GEMINI
+            if is_gemini:
+                messages = [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Eres un asistente de lengua espanola. "
+                            "Corrige la palabra al espanol correcto. "
+                            "Devuelve SOLO la palabra corregida, nada mas. "
+                            "Si la palabra ya es correcta, devuelvela igual.\n\n"
+                            f"{word}"
+                        ),
+                    }
+                ]
+            else:
+                messages = [
                     {
                         "role": "system",
                         "content": (
@@ -459,11 +348,18 @@ class SpellCorrector:
                         ),
                     },
                     {"role": "user", "content": word},
-                ],
+                ]
+
+            payload = {
+                "model": model,
+                "messages": messages,
                 "temperature": 0.0,
                 "max_tokens": 20,
             }
-            async with httpx.AsyncClient(timeout=10) as client:
+
+            timeout = 15 if is_gemini else 10
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     f"{self.api_url.rstrip('/')}/chat/completions",
                     headers=headers,
@@ -471,14 +367,22 @@ class SpellCorrector:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                corrected = data["choices"][0]["message"]["content"].strip()
+                content = data["choices"][0]["message"].get("content")
+                if content is None:
+                    return None
+                corrected = content.strip()
                 # Limpiar posibles caracteres extra
-                corrected = re.sub(r"[^\w\s\-áéíóúüñ]", "", corrected)
+                corrected = re.sub(r"[^\w\s\-áéíóúüñÁÉÍÓÚÜÑ]", "", corrected)
                 if corrected and len(corrected) < 100:
                     return corrected
                 return None
+        except httpx.TimeoutException:
+            logger.warning("Timeout en AI correction para '%s'", word)
+            self._api_failed += 1
+            return None
         except Exception:
             logger.exception("Error en AI correction para '%s'", word)
+            self._api_failed += 1
             return None
 
     # --- Validacion semantica ----------------------------------------------------------
@@ -505,13 +409,17 @@ class SpellCorrector:
 
         # 1 - En word list
         if norm in cat_words:
+            self._validation_source[f"{cat_lower}:{norm}"] = "word_list"
             return True
 
         # 2 - Fuzzy match contra word list
         if cat_words:
             best, score = self.fuzzy_match(word, list(cat_words))
             if best is not None:
-                cat_words.add(norm)  # aprender
+                best_norm = self.normalize(best)
+                cat_words.add(best_norm)
+                asyncio.create_task(self.add_to_word_list_persistent(best, category))
+                self._validation_source[f"{cat_lower}:{norm}"] = "fuzzy"
                 return True
 
         # 3 - AI validation
@@ -525,7 +433,12 @@ class SpellCorrector:
                 cached = await redis.get(cache_key)
                 if cached is not None:
                     val = cached.decode() if isinstance(cached, bytes) else cached
-                    self._api_calls += 1
+                    if val == "true":
+                        cat_words.add(norm)
+                        asyncio.create_task(
+                            self.add_to_word_list_persistent(word, category)
+                        )
+                    self._validation_source[f"{cat_lower}:{norm}"] = "ai_cache"
                     return val == "true"
 
             result = await self._ai_validate(word, category)
@@ -533,11 +446,20 @@ class SpellCorrector:
                 self._api_calls += 1
                 if redis:
                     await redis.setex(cache_key, 3600, str(result).lower())
-                    if result:
-                        cat_words.add(norm)
-                    return result
+                if result:
+                    cat_words.add(norm)
+                    asyncio.create_task(
+                        self.add_to_word_list_persistent(word, category)
+                    )
+                    self._validation_source[f"{cat_lower}:{norm}"] = "ai"
+                else:
+                    self._validation_source[f"{cat_lower}:{norm}"] = "ai_rejected"
+                return result
+            else:
+                self._api_failed += 1
 
         # 4 - Default permisivo
+        self._validation_source[f"{cat_lower}:{norm}"] = "default"
         return True
 
     async def _ai_validate(self, word: str, category: str) -> Optional[bool]:
@@ -560,9 +482,23 @@ class SpellCorrector:
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             }
-            payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
+
+            model = self.ai_model
+            is_gemini = self.ai_provider == self.PROVIDER_GEMINI
+            if is_gemini:
+                messages = [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Eres un asistente de un juego de Stop. "
+                            "Responde solo 'si' o 'no' a si la palabra "
+                            "pertenece a la categoria indicada.\n\n"
+                            f"Categoria:'{category}'\nPalabra: '{word}'"
+                        ),
+                    }
+                ]
+            else:
+                messages = [
                     {
                         "role": "system",
                         "content": (
@@ -575,11 +511,18 @@ class SpellCorrector:
                         "role": "user",
                         "content": f"Categoria:'{category}'\nPalabra: '{word}'",
                     },
-                ],
+                ]
+
+            payload = {
+                "model": model,
+                "messages": messages,
                 "temperature": 0.0,
                 "max_tokens": 5,
             }
-            async with httpx.AsyncClient(timeout=10) as client:
+
+            timeout = 15 if is_gemini else 10
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     f"{self.api_url.rstrip('/')}/chat/completions",
                     headers=headers,
@@ -587,14 +530,22 @@ class SpellCorrector:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                answer = data["choices"][0]["message"]["content"].strip().lower()
+                content = data["choices"][0]["message"].get("content")
+                if content is None:
+                    return None
+                answer = content.strip().lower()
                 return answer.strip() in ("si", "sí")
+        except httpx.TimeoutException:
+            logger.warning("Timeout en AI validation para '%s' en %s", word, category)
+            return None
         except Exception:
             logger.exception("Error en AI validation para '%s' en %s", word, category)
             return None
 
     # --- Word list management ----------------------------------------------------------
-    def add_to_word_list(self, word: str, category: str) -> None:
+    async def add_to_word_list_persistent(
+        self, word: str, category: str, source: str = "learned"
+    ) -> None:
         """Añade una palabra a la word list de una categoria.
 
         Args:
@@ -603,7 +554,35 @@ class SpellCorrector:
         """
         norm = self.normalize(word)
         cat_lower = self._normalize_category(category)
+
+        # Memoria
         self._word_lists.setdefault(cat_lower, set()).add(norm)
+
+        # BD
+        try:
+            from src.db.engine import async_session_factory
+            from src.db.repositories.word_list_repository import WordListRepository
+
+            async with async_session_factory() as session:
+                repo = WordListRepository(session)
+                exists = await repo.word_exists(norm, cat_lower)
+
+                if not exists:
+                    from src.db.models import WordListItem
+
+                    session.add(
+                        WordListItem(
+                            category=cat_lower,
+                            word=word.strip(),
+                            normalized=norm,
+                            source=source,
+                        )
+                    )
+                    await session.commit()
+        except Exception:
+            logger.exception(
+                "Error persistiendo palabra aprendida: %s -> %s", word, cat_lower
+            )
 
     def is_in_word_list(self, word: str, category: str) -> bool:
         norm = self.normalize(word)
@@ -629,7 +608,8 @@ class SpellCorrector:
                     self._word_lists[category] = set(words)
                     logger.info(
                         "Word List cargada desde DB: %s = %d palabras",
-                        category, len(words),
+                        category,
+                        len(words),
                     )
         except Exception:
             logger.exception(
@@ -669,13 +649,32 @@ class SpellCorrector:
             best, score = self.fuzzy_match(word, list(cat_words))
             if best is not None:
                 corrected_norm = self.normalize(best)
-
-                # Aprender: anadir a word list para futuros matches exactos
-                cat_words.add(norm)
+                cat_words.add(corrected_norm)
                 return True, corrected_norm
 
         # 3 - No valido
         return False, norm
+
+    def get_api_metrics(self) -> dict:
+        """Retorna metricas de llamadas a API para el reporte de ErrorTracker.
+
+        Returns:
+            dict:
+            - total_calls = total de llamadas
+            - failed_calls = llamadas fallidas
+            - remaining = cantidad de llamadas a la API restantes
+            - limit = limite de llamadas a la API
+            - provider = proveedor de AI
+            - modo = modo
+        """
+        return {
+            "total_calls": self._api_calls,
+            "failed_calls": self._api_failed,
+            "remaining": self.api_calls_remaining,
+            "limit": self.api_limit,
+            "provider": self.ai_provider,
+            "mode": self.mode,
+        }
 
 
 # --- Lazy singleton (evita circular imports) ---------------------------------
@@ -695,5 +694,7 @@ def get_corrector() -> SpellCorrector:
             api_url=settings.spell_api_url,
             api_limit=settings.spell_api_limit,
             fuzzy_threshold=settings.spell_fuzzy_threshold,
+            ai_provider=settings.spell_ai_provider,
+            ai_model=settings.spell_ai_model,
         )
     return _corrector_instance

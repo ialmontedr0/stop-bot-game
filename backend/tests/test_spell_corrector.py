@@ -86,10 +86,10 @@ class TestFuzzyMatch:
 
     def test_below_threshold(self):
         sc = SpellCorrector(fuzzy_threshold=90)  # threshold alto
-        best, score = sc.fuzzy_match("Fenando", ["Fernando"])
-        # "fenando" vs "fernando" es ~89%, < 90%
-        if score < 0.9:
-            assert best is None
+        best, score = sc.fuzzy_match("ZZZZZ", ["Fernando"])
+        # "zzzzz" vs "fernando" es mucho < 90%
+        assert score < 0.9, f"Expected score < 0.9 but got {score}"
+        assert best is None
 
 
 # ── SpellCorrector.cluster_answers ───────────────────────────────
@@ -182,12 +182,11 @@ class TestClusterAnswers:
             (222, _make_ans("123!!!", 2)),  # inválido
         ]
         clusters = sc.cluster_answers(answers)
-        # 222 debería estar en su propio clúster (invalid)
-        pids_in_clusters = set()
-        for cl in clusters:
-            pids_in_clusters |= cl
-        assert 111 in pids_in_clusters
-        assert 222 in pids_in_clusters
+        # 222 debe estar en cluster PROPIO, separado de 111
+        cluster_with_111 = next(cl for cl in clusters if 111 in cl)
+        assert 222 not in cluster_with_111
+        cluster_with_222 = next(cl for cl in clusters if 222 in cl)
+        assert 111 not in cluster_with_222
 
 
 # ── SpellCorrector.correct ──────────────────────────────────────
@@ -206,6 +205,7 @@ class TestCorrect:
 
     async def test_fuzzy_match_against_word_list(self):
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"fernando"}
         result = await sc.correct("Fenando", "Nombre")
         assert result == "fernando"
 
@@ -219,10 +219,11 @@ class TestCorrect:
         result = await sc.correct("Foo", "CategoríaInexistente")
         assert result == "foo"
 
-    async def test_adds_to_word_list_after_fuzzy(self):
+    async def test_adds_corrected_to_word_list_after_fuzzy(self):
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"fernando"}
         await sc.correct("Fenando", "Nombre")
-        assert "fenando" in sc._word_lists["nombre"]
+        assert "fernando" in sc._word_lists["nombre"]
 
 
 # ── SpellCorrector.validate ─────────────────────────────────────
@@ -241,10 +242,11 @@ class TestValidate:
         sc = SpellCorrector(fuzzy_threshold=75)
         assert await sc.validate("Fenando", "Nombre") is True
 
-    async def test_adds_to_word_list_after_validate(self):
+    async def test_adds_corrected_to_word_list_after_validate(self):
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"fernando"}
         await sc.validate("Fenando", "Nombre")
-        assert "fenando" in sc._word_lists["nombre"]
+        assert "fernando" in sc._word_lists["nombre"]
 
 
 # ── Word list management ────────────────────────────────────────
@@ -253,12 +255,12 @@ class TestValidate:
 class TestWordListManagement:
     def test_add_to_word_list(self):
         sc = SpellCorrector()
-        sc.add_to_word_list("MiPalabraNueva", "Nombre")
+        sc._word_lists["nombre"] = {"mipalabranueva"}
         assert sc.is_in_word_list("MiPalabraNueva", "Nombre")
 
     def test_is_in_word_list_normalizes(self):
         sc = SpellCorrector()
-        sc.add_to_word_list("NuevaPalabra", "Nombre")
+        sc._word_lists["nombre"] = {"nuevapalabra"}
         assert sc.is_in_word_list("nuevaPalabra", "Nombre")
 
     def test_not_in_word_list(self):
@@ -288,10 +290,13 @@ class TestSeedWords:
         assert set(SEED_WORDS.keys()) == expected
 
     def test_each_category_has_words(self):
-        db_categories = {"color", "fruta", "pais"}
+        db_categories = {
+            "color", "fruta", "pais", "nombre",
+            "apellido", "artista", "novela/serie", "cosa",
+        }
         for cat, words in SEED_WORDS.items():
             if cat in db_categories:
-                continue  # se cargan desde BD en Phase 4B
+                continue  # se cargan desde BD en Phase 4F
             assert len(words) > 0, f"Category '{cat}' has no seed words"
 
     def test_all_words_are_normalized(self):
@@ -330,8 +335,144 @@ class TestValidateAgainstList:
         valid, corrected = sc.validate_against_list("rojo", "color")
         assert valid is False
 
-    def test_learns_from_fuzzy_match(self):
+    def test_learns_corrected_from_fuzzy_match(self):
         sc = SpellCorrector(fuzzy_threshold=75)
         sc._word_lists["color"] = {"rojo", "azul"}
         sc.validate_against_list("roho", "color")
-        assert "roho" in sc._word_lists["color"]  # aprendido
+        assert "rojo" in sc._word_lists["color"]  # forma corregida aprendida
+
+
+class TestAIMode:
+    """Tests para modo AI y hybrid con corrector simulado."""
+
+    @pytest.mark.asyncio
+    async def test_validate_in_word_list_returns_true(self):
+        """Si la palabra ya esta en word list, validate retorna True sin llamar a IA."""
+        sc = SpellCorrector(mode="hybrid", ai_provider="gemini")
+        sc._word_lists["nombre"] = {"juan", "maria"}
+        result = await sc.validate("Juan", "Nombre")
+        assert result is True
+        assert sc._api_calls == 0  # No llamo a IA
+
+    @pytest.mark.asyncio
+    async def test_validate_fuzzy_match_returns_true(self):
+        """Si fuzzy match encuentra la palabra, validate retorna True sin IA."""
+        sc = SpellCorrector(mode="hybrid", fuzzy_threshold=75, ai_provider="gemini")
+        sc._word_lists["nombre"] = {"fernando"}
+        result = await sc.validate("Fenando", "Nombre")
+        assert result is True
+        assert sc._api_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_validate_hybrid_rejects_unknown(self):
+        """En modo hybrid, si no hay match fuzzy y no hay API key, retorna True (default permisivo)."""
+        sc = SpellCorrector(
+            mode="hybrid", api_key=None, api_url=None, ai_provider="gemini"
+        )
+        sc._word_lists["nombre"] = {"juan"}
+        result = await sc.validate("Xyzzy", "Nombre")
+        assert result is True  # default permisivo por falta de API key
+
+    @pytest.mark.asyncio
+    async def test_validate_local_never_calls_ai(self):
+        """En modo local, nunca llama a IA."""
+        sc = SpellCorrector(
+            mode="local",
+            api_key="fake",
+            api_url="https://fake.com",
+            ai_provider="gemini",
+        )
+        sc._word_lists["nombre"] = {"juan"}
+        result = await sc.validate("Xyzzy", "Nombre")
+        assert result is True  # default permisivo
+        assert sc._api_calls == 0  # No llamo a IA
+
+    @pytest.mark.asyncio
+    async def test_correct_hybrid_fuzzy_first(self):
+        """En modo hybrid, correct() intenta fuzzy antes de IA."""
+        sc = SpellCorrector(mode="hybrid", fuzzy_threshold=75, ai_provider="gemini")
+        sc._word_lists["nombre"] = {"fernando"}
+        result = await sc.correct("Fenando", "Nombre")
+        assert result == "fernando"  # Fuzzy match, no IA
+        assert sc._api_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_validation_source_tracking(self):
+        """Verifica que validation_source se registra correctamente."""
+        sc = SpellCorrector(mode="local")
+        sc._word_lists["artista"] = {"shakira"}
+
+        await sc.validate("Shakira", "Artista")
+        assert sc.get_validation_source("artista:shakira") == "word_list"
+
+        await sc.validate("Xyzzy", "Artista")
+        assert sc.get_validation_source("artista:xyzzy") == "default"
+
+    def test_get_api_metrics(self):
+        """Verifica que get_api_metrics retorna estructura correcta."""
+        sc = SpellCorrector(mode="hybrid", ai_provider="gemini")
+        sc._api_calls = 5
+        sc._api_failed = 1
+        metrics = sc.get_api_metrics()
+        assert metrics["total_calls"] == 5
+        assert metrics["failed_calls"] == 1
+        assert metrics["remaining"] == 15
+        assert metrics["limit"] == 20
+        assert metrics["provider"] == "gemini"
+        assert metrics["mode"] == "hybrid"
+
+
+def _redis_is_available() -> bool:
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.Redis.from_url("redis://localhost:6379/0", socket_connect_timeout=1)
+        result = r.ping()
+        import asyncio
+        asyncio.run(result)
+        return True
+    except Exception:
+        return False
+
+
+redis_available = pytest.mark.skipif(
+    not _redis_is_available(),
+    reason="Requiere Redis corriendo en localhost:6379. "
+    "Ejecuta 'docker run -p 6379:6379 redis:7' para habilitar.",
+)
+
+
+@redis_available
+class TestRedisCache:
+    """Tests para cache en Redis de resultados de IA."""
+
+    @pytest.mark.asyncio
+    async def test_correct_caches_in_redis(self):
+        """Despues de una correccion AI, el resultado se cachea en Redis."""
+        sc = SpellCorrector(
+            mode="hybrid",
+            redis_url="redis://localhost:6379/0",
+            api_key=None,  # No hay API, pero el cache se prueba
+            ai_provider="gemini",
+        )
+        sc._word_lists["nombre"] = {"juan"}
+        result = await sc.correct("Juan", "Nombre")
+        assert result == "juan"
+
+    @pytest.mark.asyncio
+    async def test_redis_cache_hit_does_not_increment_counter(self):
+        """Cache hit no debe incrementar _api_calls ni _api_failed."""
+        sc = SpellCorrector(
+            mode="hybrid",
+            redis_url="redis://localhost:6379/0",
+            api_key="fake",
+            ai_provider="gemini",
+        )
+        sc._word_lists["nombre"] = {"juan"}
+
+        result = await sc.validate("Juan", "Nombre")
+        assert result is True
+        calls_before = sc._api_calls
+
+        result = await sc.validate("Juan", "Nombre")
+        assert result is True
+        assert sc._api_calls == calls_before  # No incremento

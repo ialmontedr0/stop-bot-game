@@ -1,6 +1,5 @@
 import asyncio
 import functools
-import json
 import logging
 import traceback as tb
 from datetime import datetime, timezone
@@ -43,8 +42,7 @@ KNOWN_SOLUTIONS: dict[str, tuple[str, str]] = {
         "CRITICAL",
     ),
     "redis.exceptions.TimeoutError": (
-        "Timeout conectando a Redis. "
-        "Revisa que Redis responda con redis-cli ping.",
+        "Timeout conectando a Redis. Revisa que Redis responda con redis-cli ping.",
         "MEDIUM",
     ),
     # Telegram / aiogram
@@ -65,8 +63,7 @@ KNOWN_SOLUTIONS: dict[str, tuple[str, str]] = {
         "MEDIUM",
     ),
     "aiogram.exceptions.TelegramNetworkError": (
-        "Error de red al conectar con Telegram API. "
-        "Revisa conectividad a internet.",
+        "Error de red al conectar con Telegram API. Revisa conectividad a internet.",
         "HIGH",
     ),
     # HTTP / API
@@ -76,8 +73,7 @@ KNOWN_SOLUTIONS: dict[str, tuple[str, str]] = {
         "MEDIUM",
     ),
     "httpx.TimeoutException": (
-        "Timeout en llamada a API externa. "
-        "El servicio podría estar caído o lento.",
+        "Timeout en llamada a API externa. El servicio podría estar caído o lento.",
         "MEDIUM",
     ),
     # AsyncIO
@@ -162,7 +158,11 @@ class ErrorTracker:
         """Persiste un error en la tabla error_logs.
         Retorna el ID del log creado, o None si falla la conexión a DB.
         """
-        exc_type = f"{type(exc).__module__}.{type(exc).__qualname__}"
+        module = type(exc).__module__
+        exc_type = (
+            type(exc).__qualname__ if module == "builtins"
+            else f"{module}.{type(exc).__qualname__}"
+        )
         exc_msg = str(exc)[:2000] if str(exc) else "Sin mensaje"
         tb_str = "".join(tb.format_exception(type(exc), exc, exc.__traceback__))[:5000]
 
@@ -183,13 +183,16 @@ class ErrorTracker:
                 self._captured_count += 1
                 logger.info(
                     "Error capturado: id=%s type=%s handler=%s",
-                    log.id, exc_type, handler,
+                    log.id,
+                    exc_type,
+                    handler,
                 )
                 return log.id
         except Exception as db_err:
             logger.error(
                 "No se pudo persistir error en DB: %s. Error original: %s",
-                db_err, exc_type,
+                db_err,
+                exc_type,
             )
             return None
 
@@ -208,6 +211,7 @@ class ErrorTracker:
             async def cmd_stop(message, player, bot):
                 ...
         """
+
         def decorator(func: F) -> F:
             @functools.wraps(func)
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -239,7 +243,9 @@ class ErrorTracker:
                     message = kwargs.get("message")
                     if message:
                         context["message_text"] = getattr(message, "text", "")
-                        context["chat_type"] = getattr(message.chat, "type", "") if message.chat else ""
+                        context["chat_type"] = (
+                            getattr(message.chat, "type", "") if message.chat else ""
+                        )
 
                     context["handler"] = handler_name or func.__name__
 
@@ -252,7 +258,9 @@ class ErrorTracker:
                         context=context,
                     )
                     raise
+
             return wrapper  # type: ignore
+
         return decorator
 
     async def generate_report(
@@ -293,7 +301,9 @@ class ErrorTracker:
             for exc_type, count in freq:
                 sol, severity = _get_solution(exc_type)
                 sev_emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "ℹ️"}
-                lines.append(f"│    {sev_emoji.get(severity, '❓')} {exc_type} ({count} veces)")
+                lines.append(
+                    f"│    {sev_emoji.get(severity, '❓')} {exc_type} ({count} veces)"
+                )
         lines.append("│")
         lines.append("│  📄 Últimos errores:")
 
@@ -310,9 +320,14 @@ class ErrorTracker:
                     icon = "✅"
                 else:
                     severity = _get_solution(err.exception_type or "Exception")[1]
-                    icon = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "ℹ️"}.get(severity, "❓")
+                    icon = {
+                        "CRITICAL": "🔴",
+                        "HIGH": "🟠",
+                        "MEDIUM": "🟡",
+                        "LOW": "ℹ️",
+                    }.get(severity, "❓")
 
-                lines.append(f"│")
+                lines.append("│")
                 lines.append(f"│  {icon} [{ts}] {exc_short}")
                 if msg_short:
                     lines.append(f"│    Mensaje: {msg_short}")
@@ -324,6 +339,25 @@ class ErrorTracker:
                     lines.append(f"│    💡 Sugerencia: {solucion}")
                 if err.resolved and err.resolution:
                     lines.append(f"│    ✅ Resuelto: {err.resolution}")
+
+        try:
+            from src.services.spell_corrector import get_corrector
+
+            corrector = get_corrector()
+            api_metrics = corrector.get_api_metrics()
+            if api_metrics["total_calls"] > 0 or api_metrics["failed_calls"] > 0:
+                lines.append("│")
+                lines.append("│ LLM API Calls (ronda actual:)")
+                lines.append(f"│    Provider: {api_metrics['provider']}")
+                lines.append(f"│    Modo: {api_metrics['mode']}")
+                lines.append(f"│    Total: {api_metrics['total_calls']}")
+                lines.append(f"│    Fallos: {api_metrics['failed_calls']}")
+                lines.append(
+                    f"│    Restantes: {api_metrics['remaining']}/{api_metrics['limit']}"
+                )
+
+        except Exception:
+            pass
 
         lines.append("└──────────────────────────────────────────────")
         return "\n".join(lines)

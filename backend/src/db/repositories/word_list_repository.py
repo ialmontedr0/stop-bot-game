@@ -37,7 +37,7 @@ class WordListRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    async def bulk_insert(self, category: str, words: list[tuple[str, str]]) -> int:
+    async def bulk_insert(self, category: str, words: list[tuple[str, str]], source: str) -> int:
         """Inserta múltiples palabras. Cada tupla es (normalized, original).
         Returns cantidad de inserts.
         """
@@ -51,6 +51,7 @@ class WordListRepository:
                         category=category,
                         word=word,
                         normalized=norm,
+                        source=source
                     )
                 )
                 seen_in_batch.add(norm)

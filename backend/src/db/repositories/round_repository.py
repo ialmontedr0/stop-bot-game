@@ -81,7 +81,6 @@ class RoundRepository(BaseRepository[Round]):
         )
         for a in old.scalars():
             await self.session.delete(a)
-        await self.session.flush()
 
         result = []
         for slot, value in answers.items():

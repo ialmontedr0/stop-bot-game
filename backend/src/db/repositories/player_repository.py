@@ -39,10 +39,14 @@ class PlayerRepository(BaseRepository[Player]):
             if changed:
                 await self.session.flush()
             return player
-        return await self.create(
+        instance = Player(
             telegram_id=telegram_id,
             username=username,
             first_name=first_name,
             last_name=last_name,
             language_code=language_code,
         )
+        self.session.add(instance)
+        await self.session.flush()
+        await self.session.refresh(instance)
+        return instance

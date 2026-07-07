@@ -340,7 +340,7 @@ class TestPressStop:
             bot=AsyncMock(),
         )
         callback.answer.assert_awaited_with(
-            "❌ Esta ronda ya terminó.", show_alert=True
+            "❌ Esta ronda ya terminó.", show_alert=False
         )
 
     @pytest.mark.asyncio
@@ -378,7 +378,7 @@ class TestPressStop:
         )
         callback.answer.assert_awaited_with(
             "❌ Solo puedes usar Stop si completaste todas las categorías.",
-            show_alert=True,
+            show_alert=False,
         )
 
 

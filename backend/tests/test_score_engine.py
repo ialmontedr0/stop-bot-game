@@ -319,6 +319,7 @@ class TestScoreEngineFuzzyMatching:
 
         engine = ScoreEngine()
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"fernando", "juan", "pedro"}
         answers = {
             111: [make_answer(1, "Nombre", "Fernando")],
             222: [make_answer(2, "Nombre", "Fenando")],  # typo
@@ -333,6 +334,7 @@ class TestScoreEngineFuzzyMatching:
 
         engine = ScoreEngine()
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"juan", "pedro", "fernando"}
         answers = {
             111: [make_answer(1, "Nombre", "Juan")],
             222: [make_answer(2, "Nombre", "Pedro")],
@@ -347,6 +349,7 @@ class TestScoreEngineFuzzyMatching:
 
         engine = ScoreEngine()
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"fernando", "juan"}
         answers = {
             111: [make_answer(1, "Nombre", "Fernando")],
             222: [make_answer(2, "Nombre", "Fenando")],  # fuzzy = Fernando
@@ -375,6 +378,7 @@ class TestScoreEngineFuzzyMatching:
 
         engine = ScoreEngine()
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"fernando", "juan"}
         answers = {
             111: [make_answer(1, "Nombre", "Fernando")],
             222: [make_answer(2, "Nombre", "Juan")],
@@ -391,6 +395,7 @@ class TestScoreEngineFuzzyMatching:
 
         engine = ScoreEngine()
         sc = SpellCorrector(fuzzy_threshold=75)
+        sc._word_lists["nombre"] = {"juan"}
         answers = {
             111: [make_answer(1, "Nombre", "")],
             222: [make_answer(2, "Nombre", "Juan")],
@@ -463,7 +468,7 @@ class TestScoreEngineWordListValidation:
         assert totals[333] == 0  # inválido
 
     def test_non_db_category_unchanged(self):
-        """Categorías sin BD (ej: nombre) deben seguir comportamiento original."""
+        """Categoría sin word list en BD: se permite cualquier palabra."""
         from src.services.spell_corrector import SpellCorrector
 
         engine = ScoreEngine()
@@ -471,8 +476,27 @@ class TestScoreEngineWordListValidation:
 
         answers = {
             111: [
-                make_answer(1, "Nombre", "Naguara")
-            ],  # no está en word list pero no es BD
+                make_answer(1, "Inventada", "CualquierCosa")
+            ],
         }
         totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
         assert totals[111] == 50  # comportamiento original: se permite
+
+
+class TestScoreEngineAIHybrid:
+    def test_evaluate_non_db_category_with_validation_source(self):
+        """Para categoria NO BD, evaluate incluye validation_source en details."""
+        from src.services.spell_corrector import SpellCorrector
+
+        engine = ScoreEngine()
+        sc = SpellCorrector(mode="hybrid", fuzzy_threshold=75, ai_provider="gemini")
+        sc._word_lists["nombre"] = {"juan"}
+
+        answers = {
+            111: [make_answer(1, "Nombre", "Juan")],
+        }
+        totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
+
+        assert 111 in totals
+        assert len(details[111]) == 1
+        assert "validation_source" in details[111][0]

@@ -282,6 +282,62 @@ ESTADO DE LA FASE: EN GUIA (ver phase4d-guide.md) — chequeos automáticos comp
 
 ---
 
+## Fase 4E — LLM Híbrido (IA + Fuzzy para categorías abiertas)
+
+**Objetivo:** Implementar validación semántica con IA para las 5 categorías abiertas (Nombre, Apellido, Artista, Novela/Serie, Cosa) usando el modo `hybrid` ya soportado por `SpellCorrector`. Cuando el fuzzy matching local no encuentra la palabra en la word list, se consulta a un LLM (OpenAI/Gemini) para determinar si la respuesta es válida. Las respuestas validadas por IA se auto-expanden en la word list para futuros matches exactos.
+
+### Tareas
+
+- [ ] 4E.1 Verificar que `SPELL_MODE=hybrid` funciona correctamente en `SpellCorrector.correct()` y `SpellCorrector.validate()` para las 5 categorías abiertas
+- [ ] 4E.2 Implementar caché en Redis de resultados de LLM (`{word+category} → {is_valid, corrected}`) para evitar llamadas repetidas
+- [ ] 4E.3 Implementar rate limiting por ronda (límite configurable vía `SPELL_API_LIMIT`)
+- [ ] 4E.4 Agregar indicador visual en el scoring: si una respuesta fue validada por IA, mostrarlo en la puntuación
+- [ ] 4E.5 Crear tests para modo `hybrid`: fuzzy falla → IA responde sí/no, IA falla → fuzzy como fallback, IA timeout → comportamiento degradado
+- [ ] 4E.6 Verificar que `SPELL_MODE=ai` (solo IA, sin fuzzy) funciona como alternativa
+- [ ] 4E.7 Documentar configuración de API keys en `.env.example` (OpenAI + Gemini gratis)
+- [ ] 4E.8 Agregar al `generate_report` de ErrorTracker métricas de llamadas a API (total, fallos, timeout)
+
+**Entregable:** Las 8 categorías se validan automáticamente — modo fuzzy-local para color/fruta/país, modo híbrido (fuzzy+IA) para nombre/apellido/artista/novela-serie/cosa. Cache en Redis, rate limiting, tests pasando.
+
+ESTADO DE LA FASE: Completada (ver phase4e-guide.md)
+
+---
+
+
+## Fase 4F — Word Lists Masivas + Expansión + Modo Configurable
+
+**Objetivo:** Seedear las 8 categorías con listas de palabras extensas en PostgreSQL, implementar auto-expansión persistente (las respuestas validadas se guardan en BD), y permitir al usuario elegir el modo de validación (`local`, `ai` o `hybrid`) mediante el comando `/settings` en el grupo, almacenando la preferencia por grupo en `GroupConfig`.
+
+### Tareas
+
+- [ ] 4F.1 Migrar las 5 categorías restantes (nombre, apellido, artista, novela/serie, cosa) de `SEED_WORDS` en memoria a tablas en PostgreSQL
+- [ ] 4F.2 Crear listas semilla masivas para cada categoría:
+  - Nombre: ~1000 nombres comunes (hispanoamérica + españa)
+  - Apellido: ~1000 apellidos comunes
+  - Artista: ~500 artistas (músicos, pintores, actores, escritores)
+  - Novela/Serie: ~500 obras (libros, series, películas)
+  - Cosa: ~2000 sustantivos comunes
+
+- [ ] 4F.3 Implementar auto-expansión persistente: cuando `SPELL_MODE=local` o `hybrid` validan una palabra nueva, guardarla en `word_list_items` en BD (no solo en memoria)
+
+- [ ] 4F.4 Agregar opción de modo al comando `/settings` en el grupo (solo host/admin):
+  - `Modo validación: Local | IA | Híbrido`
+  - Persistir en `GroupConfig.validation_mode` (nueva columna)
+
+- [ ] 4F.5 Leer `GroupConfig.validation_mode` al iniciar partida y configurar `SpellCorrector.mode` dinámicamente
+
+- [ ] 4F.6 Agregar columna `source` a `word_list_items` (`seed` | `learned`) para distinguir palabras sembradas de las aprendidas
+
+- [ ] 4F.7 Script `seed_all_word_lists.py` idempotente que siembre las 8 categorías completas
+
+- [ ] 4F.8 Tests: seed masivo, auto-expansión persistente, cambio de modo dinámico, lectura de `GroupConfig`
+
+**Entregable:** Las 8 categorías con word lists masivas en BD. Auto-expansión persistente entre reinicios del bot. Modo de validación configurable por grupo vía `/settings`. Tests pasando.
+
+ESTADO DE LA FASE: PENDIENTE
+
+---
+
 ## Fase 5 — Configuración de partida y persistencia
 
 **Objetivo:** Partidas configurables (rondas, categorías, temporizador) y estadísticas.
@@ -293,21 +349,59 @@ ESTADO DE LA FASE: EN GUIA (ver phase4d-guide.md) — chequeos automáticos comp
   - `Tiempo por ronda: 30s | 45s | 60s | 90s`
   - `Categorías personalizadas` (checkbox list, 8-12 disponibles).
   - `Incluir Ñ: Sí / No`
+
 - [ ] 5.2 Persistencia de configuración por grupo:
   - Tabla `GroupConfig(group_chat_id, default_rounds, round_time, categories, include_ñ)`.
+
 - [ ] 5.3 `/stats` — estadísticas del grupo:
   - Total partidas jugadas, top 10 jugadores.
   - Gráfico semanal (generado con `matplotlib` o `pillow`).
+
 - [ ] 5.4 `/profile` — estadísticas personales del jugador:
   - Partidas jugadas, victorias, MVP times, total puntos.
   - Rating de aciertos (%).
+
 - [ ] 5.5 **Multilenguaje:** `aiogram-i18n` + ficheros `locales/`.
   - Español (por defecto), English, Português.
   - Detectar idioma del grupo o del jugador.
 
 **Entregable:** Configuración persistente, estadísticas, i18n.
 
+ESTADO DE LA FASE: 
 ---
+
+Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
+
+Fase 5 — Configuración de partida y persistencia
+
+**Objetivo:** Partidas configurables (rondas, categorías, temporizador) y estadísticas.
+
+### Tareas
+
+- [ ] 5.1 `/settings` — menú inline en el grupo (solo host o admin):
+  - `Rondas por partida: 5 | 10 | 15`
+  - `Tiempo por ronda: 30s | 45s | 60s | 90s`
+  - `Categorías personalizadas` (checkbox list, 8-12 disponibles).
+  - `Incluir Ñ: Sí / No`
+
+- [ ] 5.2 Persistencia de configuración por grupo:
+  - Tabla `GroupConfig(group_chat_id, default_rounds, round_time, categories, include_ñ)`.
+
+- [ ] 5.3 `/stats` — estadísticas del grupo:
+  - Total partidas jugadas, top 10 jugadores.
+  - Gráfico semanal (generado con `matplotlib` o `pillow`).
+
+- [ ] 5.4 `/profile` — estadísticas personales del jugador:
+  - Partidas jugadas, victorias, MVP times, total puntos.
+  - Rating de aciertos (%).
+  
+- [ ] 5.5 **Multilenguaje:** `aiogram-i18n` + ficheros `locales/`.
+  - Español (por defecto), English, Português.
+  - Detectar idioma del grupo o del jugador.
+
+**Entregable:** Configuración persistente, estadísticas, i18n.
+
+Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Fase 6 — Semanal, MVP y recompensas
 

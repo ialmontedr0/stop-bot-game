@@ -85,6 +85,11 @@ class RoundManager:
         self._letter_pending: dict[int, RoundState] = {}
         self._locks: dict[int, asyncio.Lock] = {}
 
+    def _lock_for(self, game_id: int) -> asyncio.Lock:
+        if game_id not in self._locks:
+            self._locks[game_id] = asyncio.Lock()
+        return self._locks[game_id]
+
     def get_active_round(self, game_id: int) -> Optional[RoundState]:
         return self._rounds.get(game_id)
 
@@ -134,15 +139,16 @@ class RoundManager:
             host_telegram_id=host_telegram_id or 0,
         )
 
-        state.timer_task = asyncio.create_task(self._round_timer(state, bot))
-        self._rounds[game_id] = state
-        self._rounds_by_group[group_chat_id] = game_id
-        self._letter_pending.pop(game_id, None)
         async with async_session_factory() as session:
             repo = RoundRepository(session)
             await repo.create_round(
                 game_id=game_id, round_number=round_number, letter=letter
             )
+
+        state.timer_task = asyncio.create_task(self._round_timer(state, bot))
+        self._rounds[game_id] = state
+        self._rounds_by_group[group_chat_id] = game_id
+        self._letter_pending.pop(game_id, None)
         logger.info(
             "Ronda iniciada",
             extra=dict(
@@ -169,6 +175,25 @@ class RoundManager:
             logger.info("submit_answers: no categories parsed from text")
             return False
 
+        # NUEVO: validar respuestas con SpellCorrector en modo hybrid/ai
+        # Las respuestas invalidas semanticamente se vacian (0 puntos)
+
+        from src.services.spell_corrector import get_corrector
+
+        corrector = get_corrector()
+        if corrector.mode in ("ai", "hybrid"):
+            for slot, raw_text in list(parsed.items()):
+                if raw_text and raw_text.strip():
+                    is_valid = await corrector.validate(raw_text, slot)
+                    if not is_valid:
+                        parsed[slot] = ""
+                        logger.info(
+                            "Respuesta rechazada por IA: %s=%s (player=%s)",
+                            slot,
+                            raw_text,
+                            player.id,
+                        )
+
         try:
             async with async_session_factory() as session:
                 repo = RoundRepository(session)
@@ -188,10 +213,7 @@ class RoundManager:
             logger.exception("Error al guardar respuestas en DB")
             return False
 
-        if game_id not in self._locks:
-            self._locks[game_id] = asyncio.Lock()
-
-        async with self._locks[game_id]:
+        async with self._lock_for(game_id):
             is_first = player.telegram_id not in state.submitted_player_ids
             state.submitted_player_ids.add(player.telegram_id)
             if is_first:
@@ -241,32 +263,33 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
-        state = self.get_active_round(game_id)
-        if not state:
-            await callback.answer("❌ Esta ronda ya terminó.", show_alert=True)
-            return
+        async with self._lock_for(game_id):
+            state = self.get_active_round(game_id)
+            if not state:
+                await callback.answer("❌ Esta ronda ya terminó.", show_alert=False)
+                return
 
-        if player_id != state.first_completer_id:
-            await callback.answer(
-                "❌ Solo puedes usar Stop si completaste todas las categorías.",
-                show_alert=True,
-            )
-            return
-
-        state.stop_presses += 1
-
-        if state.stop_presses >= NUM_STOP_BUTTONS:
-            try:
-                await bot.edit_message_text(
-                    self._format_stop_message(NUM_STOP_BUTTONS),
-                    chat_id=state.stop_message_chat_id,
-                    message_id=state.stop_message_id,
+            if player_id != state.first_completer_id:
+                await callback.answer(
+                    "❌ Solo puedes usar Stop si completaste todas las categorías.",
+                    show_alert=False,
                 )
-            except (TelegramBadRequest, TelegramRetryAfter):
-                pass
-            await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
-            await self._close_round(game_id, "stop", bot)
-            return
+                return
+
+            state.stop_presses += 1
+
+            if state.stop_presses >= NUM_STOP_BUTTONS:
+                try:
+                    await bot.edit_message_text(
+                        self._format_stop_message(NUM_STOP_BUTTONS),
+                        chat_id=state.stop_message_chat_id,
+                        message_id=state.stop_message_id,
+                    )
+                except (TelegramBadRequest, TelegramRetryAfter):
+                    pass
+                await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
+                await self._close_round(game_id, "stop", bot)
+                return
 
         progress = state.stop_presses
         await callback.answer(f"⏹ Stop {progress}/{NUM_STOP_BUTTONS}", show_alert=False)
@@ -291,7 +314,12 @@ class RoundManager:
         if not state:
             return
 
-        logger.info("_close_round: game=%s reason=%s ronda=%s", game_id, reason, state.round_number)
+        logger.info(
+            "_close_round: game=%s reason=%s ronda=%s",
+            game_id,
+            reason,
+            state.round_number,
+        )
 
         try:
             if state.timer_task and not state.timer_task.done() and reason != "timeout":
@@ -340,6 +368,8 @@ class RoundManager:
                             break
                 else:
                     state.leader_id = max(round_scores, key=round_scores.get)
+            else:
+                state.leader_id = None
 
             try:
                 await bot.edit_message_text(
@@ -379,7 +409,9 @@ class RoundManager:
                 self._letter_pending.pop(game_id, None)
                 return
             await self._transition_next_round(state, bot)
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError:
+            logger.info("_close_round cancelada para game %s", game_id)
+        except Exception:
             logger.exception("Error en _close_round para game %s", game_id)
 
     async def _transition_next_round(
@@ -428,27 +460,28 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
-        state = self._letter_pending.get(game_id)
-        if not state:
-            await callback.answer("❌ No hay partida activa.", show_alert=True)
-            return
-        if player_id != state.leader_id:
-            await callback.answer(
-                "❌ Solo el líder puede avanzar a la siguiente ronda.",
-                show_alert=True,
-            )
-            return
-        if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
-            state.inter_round_timeout_task.cancel()
-        if state.inter_round_message_id:
-            try:
-                await bot.delete_message(
-                    state.group_chat_id, state.inter_round_message_id
+        async with self._lock_for(game_id):
+            state = self._letter_pending.get(game_id)
+            if not state:
+                await callback.answer("❌ No hay partida activa.", show_alert=True)
+                return
+            if player_id != state.leader_id:
+                await callback.answer(
+                    "❌ Solo el líder puede avanzar a la siguiente ronda.",
+                    show_alert=True,
                 )
-            except TelegramBadRequest:
-                pass
-        await callback.answer("▶️ Avanzando a la siguiente ronda...", show_alert=False)
-        await self._prompt_letter_selection(state, bot)
+                return
+            if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
+                state.inter_round_timeout_task.cancel()
+            if state.inter_round_message_id:
+                try:
+                    await bot.delete_message(
+                        state.group_chat_id, state.inter_round_message_id
+                    )
+                except TelegramBadRequest:
+                    pass
+            await callback.answer("▶️ Avanzando a la siguiente ronda...", show_alert=False)
+            await self._prompt_letter_selection(state, bot)
 
     async def handle_stop_game(
         self,
@@ -457,36 +490,39 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
-        state = self._letter_pending.get(game_id)
-        if not state:
-            await callback.answer("❌ No hay partida activa.", show_alert=True)
-            return
-        if player_id != state.host_telegram_id:
-            await callback.answer(
-                "❌ Solo el anfitrión puede detener la partida.",
-                show_alert=True,
-            )
-            return
-        if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
-            state.inter_round_timeout_task.cancel()
-        if state.inter_round_message_id:
-            try:
-                await bot.delete_message(
-                    state.group_chat_id, state.inter_round_message_id
+        async with self._lock_for(game_id):
+            state = self._letter_pending.get(game_id)
+            if not state:
+                await callback.answer("❌ No hay partida activa.", show_alert=True)
+                return
+            if player_id != state.host_telegram_id:
+                await callback.answer(
+                    "❌ Solo el anfitrión puede detener la partida.",
+                    show_alert=True,
                 )
-            except TelegramBadRequest:
-                pass
-        await callback.answer(
-            "⏹ Partida detenida. Calculando puntuaciones...", show_alert=False
-        )
-        await self._end_game(state, bot)
+                return
+            if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
+                state.inter_round_timeout_task.cancel()
+            if state.inter_round_message_id:
+                try:
+                    await bot.delete_message(
+                        state.group_chat_id, state.inter_round_message_id
+                    )
+                except TelegramBadRequest:
+                    pass
+            await callback.answer(
+                "⏹ Partida detenida. Calculando puntuaciones...", show_alert=False
+            )
+            await self._end_game(state, bot)
 
     async def _prompt_letter_selection(self, state: RoundState, bot: Bot) -> None:
         if state.first_completer_id:
             leader_id = state.first_completer_id
         else:
             # Sin primer completador: usar el de mayor puntaje de esta ronda
-            leader_id = state.leader_id or await self._get_leader_telegram_id(state.game_id)
+            leader_id = state.leader_id or await self._get_leader_telegram_id(
+                state.game_id
+            )
         if not leader_id:
             await self._start_next_round_with_random(state, bot)
             return
@@ -532,22 +568,23 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
-        state = self._rounds.get(game_id) or self._letter_pending.get(game_id)
-        if not state:
-            await callback.answer("❌ Partida no activa.", show_alert=True)
-            return
+        async with self._lock_for(game_id):
+            state = self._rounds.get(game_id) or self._letter_pending.get(game_id)
+            if not state:
+                await callback.answer("❌ Partida no activa.", show_alert=True)
+                return
 
-        if player_id != state.leader_id:
-            await callback.answer(
-                "❌ Solo el líder puede elegir la letra.", show_alert=True
-            )
-            return
+            if player_id != state.leader_id:
+                await callback.answer(
+                    "❌ Solo el líder puede elegir la letra.", show_alert=True
+                )
+                return
 
-        if state.letter_timeout_task and not state.letter_timeout_task.done():
-            state.letter_timeout_task.cancel()
-            state.letter_timeout_task = None
+            if state.letter_timeout_task and not state.letter_timeout_task.done():
+                state.letter_timeout_task.cancel()
+                state.letter_timeout_task = None
 
-        next_number = state.round_number + 1
+            next_number = state.round_number + 1
 
         await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
 
@@ -725,18 +762,28 @@ class RoundManager:
             )
 
             # ── LOG TEMPORAL: muestra que respuestas fueron correctas/incorrectas ──
-            logger.info("=== RESULTADOS RONDA %s (letra=%s) ===", state.round_number, state.letter)
+            logger.info(
+                "=== RESULTADOS RONDA %s (letra=%s) ===",
+                state.round_number,
+                state.letter,
+            )
             for pid, answer_list in details.items():
                 pname = state.player_names.get(pid, f"ID{pid}")
                 for ad in answer_list:
                     status = "✅" if ad["is_correct"] else "❌"
                     logger.info(
                         "  %s %s | %s: '%s' → %d pts",
-                        status, pname, ad["word_slot"], ad["raw_text"], ad["score"],
+                        status,
+                        pname,
+                        ad["word_slot"],
+                        ad["raw_text"],
+                        ad["score"],
                     )
             if details:
                 logger.info("  --- Totales ---")
-                for pid, total in sorted(totals.items(), key=lambda x: x[1], reverse=True):
+                for pid, total in sorted(
+                    totals.items(), key=lambda x: x[1], reverse=True
+                ):
                     pname = state.player_names.get(pid, f"ID{pid}")
                     logger.info("  %s: %d pts", pname, total)
             logger.info("=== FIN RESULTADOS RONDA %s ===", state.round_number)
@@ -758,7 +805,9 @@ class RoundManager:
             # Persistir GamePlayer.score (acumulado) — batch
             if totals:
                 telegram_ids = list(totals.keys())
-                gps = await repo.get_game_players_by_telegrams(state.game_id, telegram_ids)
+                gps = await repo.get_game_players_by_telegrams(
+                    state.game_id, telegram_ids
+                )
                 for tid, round_score in totals.items():
                     gp = gps.get(tid)
                     if gp:
@@ -782,7 +831,9 @@ class RoundManager:
             "",
         ]
 
-        for pid, score in sorted(round_scores.items(), key=lambda x: x[1], reverse=True):
+        for pid, score in sorted(
+            round_scores.items(), key=lambda x: x[1], reverse=True
+        ):
             name = state.player_names.get(pid, f"Jugador {pid}")
             lines.append(f"  {name}: {score} pts")
 
@@ -854,7 +905,8 @@ class RoundManager:
     async def _round_timer(self, state: RoundState, bot: Bot) -> None:
         try:
             await asyncio.sleep(ROUND_DURATION)
-            await self._close_round(state.game_id, "timeout", bot)
+            async with self._lock_for(state.game_id):
+                await self._close_round(state.game_id, "timeout", bot)
         except asyncio.CancelledError:
             pass
 
