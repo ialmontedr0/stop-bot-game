@@ -10,17 +10,38 @@ from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis as AsyncRedis
 
 from src.core.config import settings
-from src.db.engine import engine
+from src.db.engine import engine, async_session_factory
+from src.db.repositories.message_log_repository import MessageLogRepository
 from src.handlers.group import group_router
 from src.handlers.start import start_router
 from src.handlers.game import diagnose_router, game_router, round_router
 from src.handlers.game.settings import settings_router
+from src.handlers.game.clear import clear_router
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
 from src.services.game_orchestrator import game_orchestrator
 
 # -- Variables globales del modulo --
 _redis_client: AsyncRedis | None = None
+_log_tasks: set[asyncio.Task] = set()
+
+
+class LoggedBot(Bot):
+    async def send_message(self, chat_id: int, text, **kwargs):
+        msg = await super().send_message(chat_id, text, **kwargs)
+        task = asyncio.create_task(self._log_message(chat_id, msg.message_id))
+        _log_tasks.add(task)
+        task.add_done_callback(_log_tasks.discard)
+        return msg
+
+    async def _log_message(self, chat_id: int, message_id: int) -> None:
+        try:
+            async with async_session_factory() as session:
+                repo = MessageLogRepository(session)
+                await repo.log_message(chat_id, message_id)
+                await session.commit()
+        except Exception:
+            logger.exception("Error en _log_message: chat_id=%s message_id=%s", chat_id, message_id)
 
 
 def setup_logging() -> None:
@@ -61,6 +82,12 @@ async def on_startup() -> None:
     await get_corrector().load_db_word_lists()
     logger.info("Word lists cargadas desde DB")
 
+    # Cleanup old message logs (>7 days)
+    async with async_session_factory() as session:
+        repo = MessageLogRepository(session)
+        await repo.cleanup_old()
+        await session.commit()
+
 
 async def on_shutdown() -> None:
     await engine.dispose()
@@ -97,7 +124,7 @@ async def main() -> None:
         storage = MemoryStorage()
 
     print("[BOOT] Autenticando con Telegram...", flush=True)
-    bot = Bot(
+    bot = LoggedBot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
@@ -115,6 +142,7 @@ async def main() -> None:
     dp.include_router(round_router)
     dp.include_router(diagnose_router)
     dp.include_router(settings_router)
+    dp.include_router(clear_router)
 
     throttle_mw = ThrottlingMiddleware()
     user_exists = UserExistsMiddleware()

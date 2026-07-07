@@ -194,3 +194,12 @@ class ErrorLog(Base):
 
     def __repr__(self) -> str:
         return f"<ErrorLog id={self.id} type={self.exception_type}>"
+
+
+class MessageLog(Base):
+    __tablename__ = "message_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    message_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(default=func.now())
