@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,6 +11,10 @@ from src.services.game_orchestrator import (
     LobbyManager,
     LobbyState,
 )
+
+# Use the module directly (not through services.__init__ which re-exports the
+# game_orchestrator singleton). This allows patch.object to work correctly.
+_game_orch_mod = sys.modules["src.services.game_orchestrator"]
 
 
 # ── LobbyState dataclass ────────────────────────────────────────────────────
@@ -129,8 +134,8 @@ class TestLobbyManagerQueries:
 
 
 class TestCreateLobby:
-    @patch("src.services.game_orchestrator.async_session_factory")
-    @patch("src.services.game_orchestrator.GameRepository")
+    @patch.object(_game_orch_mod, "async_session_factory")
+    @patch.object(_game_orch_mod, "GameRepository")
     async def test_create_lobby_success(
         self, mock_repo_cls, mock_session_factory, fresh_manager,
         mock_host_player, mock_bot,
@@ -153,8 +158,8 @@ class TestCreateLobby:
         assert fresh_manager.has_lobby(-100)
         assert mock_bot.send_message.await_count == 3  # lobby msg + DM intro + placeholder
 
-    @patch("src.services.game_orchestrator.async_session_factory")
-    @patch("src.services.game_orchestrator.GameRepository")
+    @patch.object(_game_orch_mod, "async_session_factory")
+    @patch.object(_game_orch_mod, "GameRepository")
     async def test_create_lobby_rejects_duplicate(
         self, mock_repo_cls, mock_session_factory, fresh_manager,
         mock_host_player, mock_bot,
@@ -264,8 +269,8 @@ class TestStartGame:
 
 
 class TestCancelGame:
-    @patch("src.services.game_orchestrator.async_session_factory")
-    @patch("src.services.game_orchestrator.GameRepository")
+    @patch.object(_game_orch_mod, "async_session_factory")
+    @patch.object(_game_orch_mod, "GameRepository")
     async def test_cancel_no_active_game(
         self, mock_repo_cls, mock_session_factory, fresh_manager,
         mock_host_player, mock_bot,

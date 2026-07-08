@@ -192,6 +192,19 @@ class LobbyManager:
     ) -> None:
         state = self.get_lobby_by_game(game_id)
         if not state:
+            async with async_session_factory() as session:
+                repo = GameRepository(session)
+                db_game = await repo.get_by_id(game_id)
+                if db_game and db_game.status == STATUS_PLAYING:
+                    await callback.answer(
+                        "❌ La partida ya comenzó.", show_alert=True
+                    )
+                    return
+                if db_game and db_game.status == STATUS_CANCELLED:
+                    await callback.answer(
+                        "❌ Esta partida fue cancelada.", show_alert=True
+                    )
+                    return
             await callback.answer("❌ Sala no encontrada.", show_alert=True)
             return
 

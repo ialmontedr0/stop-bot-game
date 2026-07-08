@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Router, Bot
 from aiogram.filters import Command
@@ -18,11 +18,11 @@ stats_router = Router()
 @stats_router.message(Command("stats"))
 async def cmd_stats(message: Message, bot: Bot) -> None:
     if message.chat.type == "private":
-        await message.reply(" Este comando solo funciona en grupos.")
+        await message.reply("❌ Este comando solo funciona en grupos.")
         return
 
     group_chat_id = message.chat.id
-    status_msg = await message.reply(" Generando estadisticas...")
+    status_msg = await message.reply("⏳ Generando estadisticas...")
 
     try:
         async with async_session_factory() as session:
@@ -57,7 +57,7 @@ async def cmd_stats(message: Message, bot: Bot) -> None:
             top_players = rows.all()
 
             # Actividad reciente: partidas de los últimos 7 días
-            week_ago = datetime.utcnow() - timedelta(days=7)
+            week_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
             recent_games_stmt = (
                 select(func.count(Game.id))
                 .where(Game.group_chat_id == group_chat_id)

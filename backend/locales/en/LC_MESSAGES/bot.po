@@ -47,3 +47,27 @@ msgstr "🔙 Back"
 
 msgid "close"
 msgstr "🔙 Close"
+
+msgid "leaderboard_title"
+msgstr "🏆 Weekly Leaderboard"
+
+msgid "leaderboard_empty"
+msgstr "No data this week yet.\nPlay a game to appear here!"
+
+msgid "rank_title"
+msgstr "📊 Your Weekly Rank"
+
+msgid "xp_title"
+msgstr "⚡ XP and Level"
+
+msgid "streak_title"
+msgstr "📅 Streak"
+
+msgid "level_up"
+msgstr "🎉 {name} reached level {level}!"
+
+msgid "event_active"
+msgstr "🎉 Active event: {name} (×{multiplier} XP)"
+
+msgid "profile_rank"
+msgstr "📊 Weekly Rank"

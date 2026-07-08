@@ -149,7 +149,7 @@ async def test_callback_letter_invalid_letter(mock_rm):
     from src.handlers.game.round import callback_letter
 
     callback = AsyncMock()
-    callback.data = "letter:1:Ñ"
+    callback.data = "letter:1:1"
 
     player = MagicMock(spec=Player)
     player.telegram_id = 111

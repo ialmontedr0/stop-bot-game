@@ -367,41 +367,8 @@ ESTADO DE LA FASE: COMPLETADA (ver phase4f-guide.md)
 
 **Entregable:** Configuración persistente, estadísticas, i18n.
 
-ESTADO DE LA FASE: 
+ESTADO DE LA FASE: COMPLETADA (ver phase5-guide.md)
 ---
-
-Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
-
-Fase 5 — Configuración de partida y persistencia
-
-**Objetivo:** Partidas configurables (rondas, categorías, temporizador) y estadísticas.
-
-### Tareas
-
-- [ ] 5.1 `/settings` — menú inline en el grupo (solo host o admin):
-  - `Rondas por partida: 5 | 10 | 15`
-  - `Tiempo por ronda: 30s | 45s | 60s | 90s`
-  - `Categorías personalizadas` (checkbox list, 8-12 disponibles).
-  - `Incluir Ñ: Sí / No`
-
-- [ ] 5.2 Persistencia de configuración por grupo:
-  - Tabla `GroupConfig(group_chat_id, default_rounds, round_time, categories, include_ñ)`.
-
-- [ ] 5.3 `/stats` — estadísticas del grupo:
-  - Total partidas jugadas, top 10 jugadores.
-  - Gráfico semanal (generado con `matplotlib` o `pillow`).
-
-- [ ] 5.4 `/profile` — estadísticas personales del jugador:
-  - Partidas jugadas, victorias, MVP times, total puntos.
-  - Rating de aciertos (%).
-  
-- [ ] 5.5 **Multilenguaje:** `aiogram-i18n` + ficheros `locales/`.
-  - Español (por defecto), English, Português.
-  - Detectar idioma del grupo o del jugador.
-
-**Entregable:** Configuración persistente, estadísticas, i18n.
-
-Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Fase 6 — Semanal, MVP y recompensas
 
@@ -415,10 +382,12 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
     - Persiste en `WeeklyLeaderboard`.
     - Envía resumen a cada grupo con top 5.
   - `/weekly` — consultar leaderboard actual.
+
 - [ ] 6.2 **MVP semanal:**
   - Jugador con más puntos en la semana.
   - Rol "MVP" asignado en el grupo (si el bot tiene privilegios de admin).
   - O badge en el perfil del bot.
+
 - [ ] 6.3 **Recompensas sugeridas:**
   - **Rango/título:** Novato → Estrella → Leyenda (según partidas ganadas).
   - **Streak:** Bonus de `+5` puntos por partida consecutiva jugada (misma semana).
@@ -429,12 +398,15 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
     - *Completista*: Responder todas las categorías en todas las rondas de una partida.
     - *Políglota*: Jugar en 3 idiomas distintos.
   - Cada logro tiene un badge emoji y se muestra en `/profile`.
+
 - [ ] 6.4 **Sistema de niveles:**
   - XP por partida + logros.
   - Niveles 1-50 con fórmula: `XP_requerido = 100 * nivel^1.5`.
 
 **Entregable:** Weekly leaderboard, MVP, logros, niveles.
 
+
+ESTADO DE LA FASE: COMPLETADA (ver phase6-guide.md)
 ---
 
 ## Fase 7 — Experiencia moderna: animaciones, UI, imágenes
@@ -447,25 +419,67 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
   - Countdown: bot edita el mensaje cada segundo (`"⏰ 5..."`, `"4..."`, etc.).
   - Lobby: puntos suspensivos animados (`"Esperando jugadores"` → `"."` → `".."` → `"..."`).
   - Usar `asyncio.sleep` + `edit_message_text`.
+
 - [ ] 7.2 **Imágenes generadas:**
   - Logo de ronda con letra grande (Pillow): fondo degradado, letra blanca.
   - Podio final: imagen con 🥇🥈🥉 y nombres.
   - Cartas de logros al desbloquear.
   - Tabla semanal como imagen.
+
 - [ ] 7.3 **Botones inline:**
   - Con emojis y estilos limpios.
   - `InlineKeyboardButton` con `callback_data` estructurada.
   - Paginación en menús largos (ej. selección de letra → 2 filas de 13).
+
 - [ ] 7.4 **Efectos visuales:**
   - Spoiler en respuestas hasta el Stop (`parse_mode="HTML"` con `<tg-spoiler>`).
   - Stickers temporales del bot (subir stickers personalizados a @BotFather).
+
 - [ ] 7.5 **Formato de mensajes:**
   - Usar `HTML` parse mode con negritas, itálicas, monoespaciado.
   - Tablas de puntuación con emojis de barras de progreso (`🟩🟩🟩⬜⬜`).
 
 **Entregable:** Bot visualmente moderno con imágenes, animaciones y botones ricos.
 
+
+ESTADO DE LA FASE: 
 ---
+
+Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
+
+Fase 7 — Experiencia moderna: animaciones, UI, imágenes
+
+**Objetivo:** Hacer el bot visualmente atractivo.
+
+### Tareas
+
+- [ ] 7.1 **Mensajes animados:**
+  - Countdown: bot edita el mensaje cada segundo (`"⏰ 5..."`, `"4..."`, etc.).
+  - Lobby: puntos suspensivos animados (`"Esperando jugadores"` → `"."` → `".."` → `"..."`).
+  - Usar `asyncio.sleep` + `edit_message_text`.
+
+- [ ] 7.2 **Imágenes generadas:**
+  - Logo de ronda con letra grande (Pillow): fondo degradado, letra blanca.
+  - Podio final: imagen con 🥇🥈🥉 y nombres.
+  - Cartas de logros al desbloquear.
+  - Tabla semanal como imagen.
+
+- [ ] 7.3 **Botones inline:**
+  - Con emojis y estilos limpios.
+  - `InlineKeyboardButton` con `callback_data` estructurada.
+  - Paginación en menús largos (ej. selección de letra → 2 filas de 13).
+
+- [ ] 7.4 **Efectos visuales:**
+  - Spoiler en respuestas hasta el Stop (`parse_mode="HTML"` con `<tg-spoiler>`).
+  - Stickers temporales del bot (subir stickers personalizados a @BotFather).
+
+- [ ] 7.5 **Formato de mensajes:**
+  - Usar `HTML` parse mode con negritas, itálicas, monoespaciado.
+  - Tablas de puntuación con emojis de barras de progreso (`🟩🟩🟩⬜⬜`).
+
+**Entregable:** Bot visualmente moderno con imágenes, animaciones y botones ricos.
+
+Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Fase 8 — Calidad, testing, despliegue
 
@@ -479,21 +493,27 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
   - `GameOrchestrator` (transiciones de estado).
   - `AnswerParser` (regex, edge cases).
   - Coverage target: >85%.
+
 - [ ] 8.2 **Tests de integración:**
   - Base de datos con `testcontainers` o SQLite in-memory.
   - Flujo lobby → ronda → stop → evaluación.
+
 - [ ] 8.3 **Linting y tipado:**
   - `ruff` (lint + format).
   - `mypy` strict.
   - `pre-commit` hooks.
+
 - [ ] 8.4 **CI/CD:**
   - GitHub Actions: lint → test → build Docker → push a registry.
   - CD: deploy automático a VPS (o Railway / Render).
+
 - [ ] 8.5 **Monitoreo:**
   - `structlog` para logging estructurado (JSON).
   - `prometheus_client` + métricas: games_played, rounds_played, api_calls, errors.
   - Healthcheck endpoint HTTP (puerto separado).
+
 - [ ] 8.6 **Graceful shutdown:** Capturar `SIGTERM`, cerrar conexiones, finalizar tasks pendientes.
+
 - [ ] 8.7 **Documentación:**
   - `README.md` con instrucciones de despliegue.
   - Comentarios de arquitectura en `docs/ARCHITECTURE.md`.
@@ -510,11 +530,17 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
 ### Tareas
 
 - [ ] 9.1 **Partidas 1v1:** Dos jugadores en chat privado con el bot.
+
 - [ ] 9.2 **Partidas públicas / matchmaking:** Bot busca jugadores para ti.
+
 - [ ] 9.3 **Categorías generadas por IA:** Cada ronda, IA elige categorías temáticas.
+
 - [ ] 9.4 **Modo difícil:** Categorías más específicas, sin duplicados, tiempo reducido.
+
 - [ ] 9.5 **Comando `/top`:** Top global de todas las comunidades.
+
 - [ ] 9.6 **Web panel:** Dashboard para ver estadísticas (FastAPI + React ligero).
+
 - [ ] 9.7 **Notificaciones push:** Bot avisa cuando empieza una partida en grupos donde el jugador está.
 
 **Entregable:** Features opcionales, backlog priorizado.

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, delete
 from src.db.models import MessageLog
 
@@ -11,12 +11,13 @@ class MessageLogRepository:
         log = MessageLog(
             chat_id=chat_id,
             message_id=message_id,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         self.session.add(log)
 
     async def get_today_messages(self, chat_id: int) -> list[int]:
-        today = datetime.utcnow().replace(
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        today = now_utc.replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         stmt = (
@@ -39,6 +40,6 @@ class MessageLogRepository:
         await self.session.execute(stmt)
 
     async def cleanup_old(self, days: int = 7) -> None:
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         stmt = delete(MessageLog).where(MessageLog.created_at < cutoff)
         await self.session.execute(stmt)

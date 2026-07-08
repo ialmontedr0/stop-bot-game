@@ -17,16 +17,23 @@ from src.handlers.start import start_router
 from src.handlers.game import diagnose_router, game_router, round_router
 from src.handlers.game.settings import settings_router
 from src.handlers.game.clear import clear_router
+from src.handlers.game.clear_stats import clear_stats_router
 from src.handlers.game.stats import stats_router
 from src.handlers.game.profile import profile_router
+from src.handlers.game.leaderboard import leaderboard_router
+from src.handlers.admin.events import admin_router
 from src.i18n import get_user_locale
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
 from src.services.game_orchestrator import game_orchestrator
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from src.db.repositories.leaderboard_repository import LeaderboardRepository
 
 # -- Variables globales del modulo --
 _redis_client: AsyncRedis | None = None
 _log_tasks: set[asyncio.Task] = set()
+
+_scheduler: AsyncIOScheduler | None = None
 
 
 class LoggedBot(Bot):
@@ -93,8 +100,24 @@ async def on_startup() -> None:
         await repo.cleanup_old()
         await session.commit()
 
+    # === Scheduler semanal: cerrar leaderboard los lunes 00:00 ===
+    global _scheduler
+    _scheduler = AsyncIOScheduler()
+    _scheduler.add_job(
+        LeaderboardRepository.close_week,
+        trigger="cron",
+        day_of_week="mon",
+        hour=0,
+        minute=0,
+    )
+    _scheduler.start()
+    logger.info("Scheduler semanal iniciado (leaderboard close cada lunes 00:00)")
+
 
 async def on_shutdown() -> None:
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+
     await engine.dispose()
     if _redis_client:
         await _redis_client.close()
@@ -156,8 +179,11 @@ async def main() -> None:
     dp.include_router(diagnose_router)
     dp.include_router(settings_router)
     dp.include_router(clear_router)
+    dp.include_router(clear_stats_router)
     dp.include_router(stats_router)
     dp.include_router(profile_router)
+    dp.include_router(leaderboard_router)
+    dp.include_router(admin_router)
 
     throttle_mw = ThrottlingMiddleware()
     user_exists = UserExistsMiddleware()

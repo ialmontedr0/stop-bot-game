@@ -37,6 +37,13 @@ class Player(Base):
         back_populates="player", cascade="all, delete-orphan"
     )
 
+    xp: Mapped[Optional["PlayerXP"]] = relationship(
+        back_populates="player", uselist=False, cascade="all, delete-orphan"
+    )
+    streak: Mapped[Optional["Streak"]] = relationship(
+        back_populates="player", uselist=False, cascade="all, delete-orphan"
+    )
+
 
 class Game(Base):
     __tablename__ = "games"
@@ -132,12 +139,59 @@ class WeeklyLeaderboard(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
-    week_start: Mapped[date] = mapped_column(default=func.current_date())
+    week_start: Mapped[date] = mapped_column(default=lambda: date.today())
     total_score: Mapped[int] = mapped_column(default=0)
     games_played: Mapped[int] = mapped_column(default=0)
     rank: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     player: Mapped["Player"] = relationship(back_populates="weekly_leaderboards")
+
+
+class PlayerXP(Base):
+    __tablename__ = "player_xp"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    xp: Mapped[int] = mapped_column(default=0)
+    level: Mapped[int] = mapped_column(default=1)
+    total_xp_earned: Mapped[int] = mapped_column(default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now()
+    )
+
+    player: Mapped["Player"] = relationship(back_populates="xp")
+
+
+class Streak(Base):
+    __tablename__ = "streaks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    current_streak: Mapped[int] = mapped_column(default=0)
+    max_streak: Mapped[int] = mapped_column(default=0)
+    last_played_date: Mapped[Optional[date]] = mapped_column(nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now()
+    )
+
+    player: Mapped["Player"] = relationship(back_populates="streak")
+
+
+class SeasonalEvent(Base):
+    __tablename__ = "seasonal_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    multiplier: Mapped[float] = mapped_column(default=1.0)  # ej: 2.0 = doble xp
+    starts_at: Mapped[datetime] = mapped_column()
+    ends_at: Mapped[datetime] = mapped_column()
+    active: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(default=func.now())
 
 
 class GroupConfig(Base):

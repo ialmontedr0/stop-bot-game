@@ -1,8 +1,10 @@
+from __future__ import annotations
 import logging
 import asyncio
 import re
 from typing import Optional
 
+from src.db.models import Answer
 from src.core.text_utils import normalize_text
 
 logger = logging.getLogger(__name__)
@@ -163,7 +165,7 @@ class SpellCorrector:
 
     def cluster_answers(
         self,
-        answers: list[tuple[int, "Answer"]],  # noqa: F821
+        answers: list[tuple[int, "Answer"]],  # noqa: E401
     ) -> list[set[int]]:
         """Agrupa player_ids por respuestas consideradas iguales via fuzzy matching.
 
@@ -229,7 +231,9 @@ class SpellCorrector:
 
     # --- Correccion ortografica --------------------------------------------------------
 
-    async def correct(self, word: str, category: str, mode: Optional[str] = None) -> str:
+    async def correct(
+        self, word: str, category: str, mode: Optional[str] = None
+    ) -> str:
         """Devuelve la forma corregida/normalizada de la palabra.
 
         Pipeline:
@@ -388,7 +392,9 @@ class SpellCorrector:
 
     # --- Validacion semantica ----------------------------------------------------------
 
-    async def validate(self, word: str, category: str, mode: Optional[str] = None) -> bool:
+    async def validate(
+        self, word: str, category: str, mode: Optional[str] = None
+    ) -> bool:
         """La palabra pertenece a la categoria?
 
         Pipeline:

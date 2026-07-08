@@ -41,23 +41,22 @@ def _serialize_categories(cats: list[str]) -> str:
 
 @settings_router.message(Command("settings"))
 async def cmd_settings(message: Message, player: Player, bot: Bot) -> None:
-    locale = get_user_locale(player)
-    text = t("settings_title", locale=locale)
-    
+
     if message.chat.type == "private":
         await message.reply("❌ Este comando solo funciona en grupos.")
         return
 
     if not await is_admin(bot, message.chat.id, message.from_user.id):
-        await message.reply("❌ Solo los administradores del grupo pueden usar este comando.")
+        await message.reply(
+            "❌ Solo los administradores del grupo pueden usar este comando."
+        )
         return
 
     config = await _get_config(message.chat.id)
     cats = _parse_categories(config.categories)
 
-    text = (
-        f"{hbold('⚙️ Configuración del Grupo')}\n\nSelecciona una opción para cambiar:"
-    )
+    locale = get_user_locale(player)
+    text = f"{hbold(t('settings_title', locale=locale))}\n\nSelecciona una opción para cambiar:"
     markup = settings_main_keyboard(
         current_rounds=config.default_rounds,
         current_time=config.round_time,

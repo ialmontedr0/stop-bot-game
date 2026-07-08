@@ -5,7 +5,7 @@ ALL_CATEGORIES = [
     "Apellido",
     "Color",
     "Fruta",
-    "Pais",
+    "País",
     "Artista",
     "Novela/Serie",
     "Cosa",
@@ -59,16 +59,19 @@ def settings_main_keyboard(
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+
 def settings_rounds_keyboard(current: int) -> InlineKeyboardMarkup:
     rows = []
     for opt in ROUND_OPTIONS:
         selected = "• " if opt == current else ""
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{selected}{opt} rondas",
-                callback_data=f"set_rondas:{opt}",
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{selected}{opt} rondas",
+                    callback_data=f"set_rondas:{opt}",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="🔙 Volver", callback_data="settings_main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -77,12 +80,14 @@ def settings_time_keyboard(current: int) -> InlineKeyboardMarkup:
     rows = []
     for opt in TIME_OPTIONS:
         selected = "• " if opt == current else ""
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{selected}{opt}s",
-                callback_data=f"set_tiempo:{opt}",
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{selected}{opt}s",
+                    callback_data=f"set_tiempo:{opt}",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="🔙 Volver", callback_data="settings_main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -91,28 +96,31 @@ def settings_mode_keyboard(current: str) -> InlineKeyboardMarkup:
     rows = []
     for value, label in MODE_OPTIONS:
         selected = "• " if value == current else ""
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{selected}{label}",
-                callback_data=f"set_mode:{value}",
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{selected}{label}",
+                    callback_data=f"set_mode:{value}",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="🔙 Volver", callback_data="settings_main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def settings_cats_keyboard(
-    all_cats: list[str],
-    selected_cats: list[str]
+    all_cats: list[str], selected_cats: list[str]
 ) -> InlineKeyboardMarkup:
     rows = []
     for cat in all_cats:
         checked = "✅ " if cat in selected_cats else "⬜ "
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{checked}{cat}",
-                callback_data=f"toggle_cat:{cat}",
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{checked}{cat}",
+                    callback_data=f"toggle_cat:{cat}",
+                )
+            ]
+        )
     rows.append([InlineKeyboardButton(text="🔙 Volver", callback_data="settings_main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

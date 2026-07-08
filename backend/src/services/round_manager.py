@@ -21,6 +21,7 @@ from src.db.repositories.round_repository import RoundRepository
 from src.keyboards.round import inter_round_keyboard, stop_keyboard, letter_keyboard
 from src.services.score_engine import FIRST_COMPLETER_BONUS, ScoreEngine
 from src.services.spell_corrector import get_corrector
+from src.services.xp_service import xp_service
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +383,8 @@ class RoundManager:
                     state.leader_id = max(round_scores, key=round_scores.get)
             else:
                 state.leader_id = None
+                if state.player_names:
+                    state.leader_id = random.choice(list(state.player_names.keys()))
 
             try:
                 await bot.edit_message_text(
@@ -555,7 +558,7 @@ class RoundManager:
                 msg = await bot.send_message(
                     state.group_chat_id,
                     f"🏆 <b>{name}, elige la letra de la siguiente ronda:</b>",
-                    reply_markup=letter_keyboard(state.game_id),
+                    reply_markup=letter_keyboard(state.game_id, state.include_n),
                 )
                 break
             except TelegramRetryAfter as e:
@@ -577,7 +580,7 @@ class RoundManager:
             await msg.delete()
         except (TelegramBadRequest, TelegramRetryAfter):
             pass
-        letter = random.choice(ALPHABET)
+        letter = random.choice(get_alphabet(state.include_n))
         await self._start_next_round_with_letter(state, letter, bot)
 
     async def handle_letter_selection(
@@ -665,7 +668,7 @@ class RoundManager:
         )
 
     async def _start_next_round_with_random(self, state, bot):
-        letter = random.choice(ALPHABET)
+        letter = random.choice(get_alphabet(state.include_n))
         await self._start_next_round_with_letter(state, letter, bot)
 
     # Finalizar juego
@@ -680,16 +683,81 @@ class RoundManager:
 
             winners = await self._get_standings(state.game_id)
 
+        # === Otorgar XP, streaks, leaderboard ===
+        xp_results = {}
+        for position, (telegram_id, score) in enumerate(winners):
+            # Buscar player_id interno
+            async with async_session_factory() as session:
+                stmt = select(Player).where(Player.telegram_id == telegram_id)
+                result = await session.execute(stmt)
+                player = result.scalar_one_or_none()
+                if not player:
+                    continue
+
+            # Streaks
+            await xp_service.update_streak(player.id)
+
+            # XP
+            was_stopper = telegram_id == state.first_completer_id if state else False
+            # unique_answers: contar respuestas unicas de ese jugador en la ultima ronda
+            unique_answers = 0  # Simplificado idealmente contar desde details
+            xp_info = await xp_service.award_game_xp(
+                player_id=player.id,
+                final_position=position + 1,
+                was_stopper=was_stopper,
+                unique_answers=unique_answers,
+            )
+            xp_results[telegram_id] = xp_info
+
+            # Leaderboard semanal
+            from src.services.leaderboard import leaderboard_service
+
+            await leaderboard_service.upsert_player(
+                player_id=player.id,
+                score_to_add=score,
+            )
+
+        # === Recalcular ranks semanales ===
+        from src.db.repositories.leaderboard_repository import LeaderboardRepository
+
+        await LeaderboardRepository.recalculate_ranks()
+
         lines = ["<b>🏆 ¡Partida finalizada!</b>", ""]
         if winners:
             for i, (pid, score) in enumerate(winners[:3]):
                 medals = ["🥇", "🥈", "🥉"]
                 name = state.player_names.get(pid, f"Jugador {pid}")
-                lines.append(f"{medals[i] if i < 3 else i + 1}. {name} — {score} pts")
+                xp_info = xp_results.get(pid, {})
+                xp_text = f" (+{xp_info.get('xp_gained', 0)} XP)" if xp_info else ""
+                lines.append(
+                    f"{medals[i] if i < 3 else i + 1}. {name} — {score} pts{xp_text}"
+                )
+
+                # Mensaje de subida de nivel
+                if xp_info.get("leveled_up"):
+                    title = xp_info.get("title", "")
+                    title_text = f" | 🎖{title}" if title else ""
+
+                    await bot.send_message(
+                        state.group_chat_id,
+                        f"🎉 <b>{name} ha subido al nivel {xp_info['level']}!</b>{title_text}",
+                    )
         else:
             lines.append("  No hay puntuaciones registradas.")
+
+        # Evento activo
+        from src.services.event_service import event_service
+
+        active_events = await event_service.get_active_events()
+        for event in active_events:
+            lines.append("")
+            lines.append(
+                f" <b>Evento en curso: {event['name']}</b> (x{event['multiplier']} XP)"
+            )
+
         lines.append("")
         lines.append("<i>Gracias por jugar 🛑 Stop!</i>")
+
         await bot.send_message(state.group_chat_id, "\n".join(lines))
         self._letter_pending.pop(state.game_id, None)
         self._rounds_by_group.pop(state.group_chat_id, None)
@@ -740,7 +808,11 @@ class RoundManager:
         )
 
     async def _do_update_round_message(self, state: RoundState, bot: Bot) -> None:
-        lines = [self._format_round_message(state.round_number, state.letter)]
+        lines = [
+            self._format_round_message(
+                state.round_number, state.letter, state.categories, state.round_time
+            )
+        ]
 
         if state.submitted_player_ids:
             lines.append("")

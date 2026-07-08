@@ -7,7 +7,7 @@ from src.db.models import Player
 from src.services.error_tracker import error_tracker
 from src.services.round_manager import (
     round_manager,
-    ALPHABET,
+    get_alphabet,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ async def callback_letter(callback: CallbackQuery, player: Player, bot: Bot) -> 
         await callback.answer("❌ Datos inválidos.", show_alert=True)
         return
 
-    if letter not in ALPHABET:
+    if letter not in get_alphabet(include_n=True):
         await callback.answer("❌ Letra inválida.", show_alert=True)
         return
 

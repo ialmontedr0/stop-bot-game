@@ -6,6 +6,7 @@ from .round_repository import RoundRepository
 from .word_list_repository import WordListRepository
 from .message_log_repository import MessageLogRepository
 from .group_config_repository import GroupConfigRepository
+from .leaderboard_repository import LeaderboardRepository
 
 __all__ = [
     "BaseRepository",
@@ -16,4 +17,5 @@ __all__ = [
     "WordListRepository",
     "MessageLogRepository",
     "GroupConfigRepository",
+    "LeaderboardRepository",
 ]

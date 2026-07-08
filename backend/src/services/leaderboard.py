@@ -1,8 +1,9 @@
 import logging
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, desc
 
 from src.db.engine import async_session_factory
+from src.db.repositories.leaderboard_repository import LeaderboardRepository
 from src.db.models import WeeklyLeaderboard, Player
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,18 @@ class LeaderboardService:
             ]
 
     @staticmethod
-    async def get_player_rank(player_id: int) -> dict | None:
+    async def get_player_rank_by_telegram(telegram_id: int) -> dict | None:
+        """Busca por telegram_id en vez de player.id interno"""
         async with async_session_factory() as session:
-            stmt = select(WeeklyLeaderboard).where(
-                WeeklyLeaderboard.player_id == player_id
+            player_stmt = select(Player).where(
+                Player.telegram_id == telegram_id
             )
+            player_result = await session.execute(player_stmt)
+            player = player_result.scalar_one_or_none()
+            if not player:
+                return None
+            
+            stmt = select(WeeklyLeaderboard).where(WeeklyLeaderboard.player_id == player.id)
             result = await session.execute(stmt)
             entry = result.scalar_one_or_none()
             if not entry:
@@ -46,6 +54,11 @@ class LeaderboardService:
                 "score": entry.total_score,
                 "games": entry.games_played,
             }
+            
+    
+    @staticmethod
+    async def upsert_player(player_id: int, score_to_add: int) -> None:
+        await LeaderboardRepository.upsert_player_week(player_id, score_to_add)
 
 
 leaderboard_service = LeaderboardService()

@@ -20,10 +20,14 @@ def stop_keyboard(game_id: int, stop_number: int) -> InlineKeyboardMarkup:
     )
 
 
-def letter_keyboard(game_id: int) -> InlineKeyboardMarkup:
+def letter_keyboard(game_id: int, include_n: bool = False) -> InlineKeyboardMarkup:
+    letters = list(LETTERS)
+    if include_n:
+        idx = letters.index("N") + 1
+        letters.insert(idx, "Ñ")
     rows = []
     row = []
-    for i, letter in enumerate(LETTERS):
+    for i, letter in enumerate(letters):
         row.append(
             InlineKeyboardButton(
                 text=letter,
