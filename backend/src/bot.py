@@ -17,6 +17,9 @@ from src.handlers.start import start_router
 from src.handlers.game import diagnose_router, game_router, round_router
 from src.handlers.game.settings import settings_router
 from src.handlers.game.clear import clear_router
+from src.handlers.game.stats import stats_router
+from src.handlers.game.profile import profile_router
+from src.i18n import get_user_locale
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
 from src.services.game_orchestrator import game_orchestrator
@@ -41,7 +44,9 @@ class LoggedBot(Bot):
                 await repo.log_message(chat_id, message_id)
                 await session.commit()
         except Exception:
-            logger.exception("Error en _log_message: chat_id=%s message_id=%s", chat_id, message_id)
+            logger.exception(
+                "Error en _log_message: chat_id=%s message_id=%s", chat_id, message_id
+            )
 
 
 def setup_logging() -> None:
@@ -133,6 +138,14 @@ async def main() -> None:
 
     dp = Dispatcher(storage=storage)
 
+    @dp.message.outer_middleware
+    async def i18n_middleware(handler, event, data):
+        player = data.get("player")
+        if player:
+            # El locale se puede usar en handlers mediante data["locale"]
+            data["locale"] = get_user_locale(player)
+        return await handler(event, data)
+
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
@@ -143,6 +156,8 @@ async def main() -> None:
     dp.include_router(diagnose_router)
     dp.include_router(settings_router)
     dp.include_router(clear_router)
+    dp.include_router(stats_router)
+    dp.include_router(profile_router)
 
     throttle_mw = ThrottlingMiddleware()
     user_exists = UserExistsMiddleware()

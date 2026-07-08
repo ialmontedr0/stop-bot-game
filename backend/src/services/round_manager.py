@@ -55,6 +55,8 @@ class RoundState:
     message_chat_id: int
     message_id: int
     host_telegram_id: int
+    round_time: int = 60
+    include_n: bool = False
     timer_task: Optional[asyncio.Task] = None
     submitted_player_ids: set[int] = field(default_factory=set)
     submission_order: list[int] = field(default_factory=list)
@@ -114,8 +116,16 @@ class RoundManager:
         bot: Bot,
         total_rounds: int = TOTAL_ROUNDS,
         host_telegram_id: Optional[int] = None,
+        round_time: int = 60,
+        categories: Optional[list[str]] = None,
+        include_n: bool = False,
     ) -> None:
-        text = self._format_round_message(round_number, letter)
+        # Usar categorias de GroupConfig (o las default)
+        effective_categories = categories or CATEGORIES
+
+        text = self._format_round_message(
+            round_number, letter, effective_categories, round_time
+        )
 
         while True:
             try:
@@ -130,13 +140,15 @@ class RoundManager:
             group_chat_id=group_chat_id,
             round_number=round_number,
             letter=letter,
-            categories=CATEGORIES,
+            categories=effective_categories,
             message_chat_id=msg.chat.id,
             message_id=msg.message_id,
             total_players=total_players,
             total_rounds=total_rounds,
             player_names=player_names,
             host_telegram_id=host_telegram_id or 0,
+            round_time=round_time,
+            include_n=include_n,
         )
 
         async with async_session_factory() as session:
@@ -471,7 +483,10 @@ class RoundManager:
                     show_alert=True,
                 )
                 return
-            if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
+            if (
+                state.inter_round_timeout_task
+                and not state.inter_round_timeout_task.done()
+            ):
                 state.inter_round_timeout_task.cancel()
             if state.inter_round_message_id:
                 try:
@@ -480,7 +495,9 @@ class RoundManager:
                     )
                 except TelegramBadRequest:
                     pass
-            await callback.answer("▶️ Avanzando a la siguiente ronda...", show_alert=False)
+            await callback.answer(
+                "▶️ Avanzando a la siguiente ronda...", show_alert=False
+            )
             await self._prompt_letter_selection(state, bot)
 
     async def handle_stop_game(
@@ -501,7 +518,10 @@ class RoundManager:
                     show_alert=True,
                 )
                 return
-            if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
+            if (
+                state.inter_round_timeout_task
+                and not state.inter_round_timeout_task.done()
+            ):
                 state.inter_round_timeout_task.cancel()
             if state.inter_round_message_id:
                 try:
@@ -618,6 +638,9 @@ class RoundManager:
             player_names=state.player_names,
             bot=bot,
             host_telegram_id=state.host_telegram_id,
+            round_time=state.round_time,
+            categories=state.categories,
+            include_n=state.include_n,
         )
 
     async def _start_next_round_with_letter(
@@ -636,6 +659,9 @@ class RoundManager:
             player_names=prev_state.player_names,
             bot=bot,
             host_telegram_id=prev_state.host_telegram_id,
+            round_time=prev_state.round_time,
+            categories=prev_state.categories,
+            include_n=prev_state.include_n,
         )
 
     async def _start_next_round_with_random(self, state, bot):
@@ -904,19 +930,22 @@ class RoundManager:
 
     async def _round_timer(self, state: RoundState, bot: Bot) -> None:
         try:
-            await asyncio.sleep(ROUND_DURATION)
+            await asyncio.sleep(state.round_time)
             async with self._lock_for(state.game_id):
                 await self._close_round(state.game_id, "timeout", bot)
         except asyncio.CancelledError:
             pass
 
     @staticmethod
-    def _format_round_message(round_number: int, letter: str) -> str:
+    def _format_round_message(
+        round_number: int, letter: str, categories: list[str], round_time: int
+    ) -> str:
+        cats_display = "\n".join(f"  <b>{cat}:</b> ..." for cat in categories)
         return (
             f"🛑 <b>Ronda {round_number} — Letra: {letter}</b>\n"
-            f"⏱ {ROUND_DURATION} segundos\n\n"
+            f"⏱ {round_time} segundos\n\n"
             f"Envía tus respuestas en este formato:\n\n"
-            f"{CATEGORIES_DISPLAY}"
+            f"{cats_display}"
         )
 
     @staticmethod
@@ -960,6 +989,15 @@ def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
             result[canonical] = value
 
     return result
+
+
+def get_alphabet(include_n: bool = False) -> str:
+    base = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    if include_n:
+        # Insertar Ñ despues de la N
+        idx = base.index("N") + 1
+        return base[:idx] + "Ñ" + base[idx:]
+    return base
 
 
 round_manager = RoundManager()

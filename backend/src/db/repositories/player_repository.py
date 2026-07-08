@@ -37,7 +37,7 @@ class PlayerRepository(BaseRepository[Player]):
                     setattr(player, field, value)
                     changed = True
             if changed:
-                await self.session.flush()
+                await self.session.commit()
             return player
         instance = Player(
             telegram_id=telegram_id,
@@ -47,6 +47,6 @@ class PlayerRepository(BaseRepository[Player]):
             language_code=language_code,
         )
         self.session.add(instance)
-        await self.session.flush()
+        await self.session.commit()
         await self.session.refresh(instance)
         return instance

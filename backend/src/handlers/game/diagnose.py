@@ -1,14 +1,14 @@
 import asyncio
 import logging
 
-from aiogram import Router, F
+from aiogram import Bot, Router, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from src.db.engine import async_session_factory
 from src.db.repositories.error_log_repository import ErrorLogRepository
 from src.services.error_tracker import error_tracker
-from src.utils import delete_after
+from src.utils import delete_after, is_admin
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +16,15 @@ diagnose_router = Router()
 
 
 @diagnose_router.message(Command("diagnose"))
-async def cmd_diagnose(message: Message) -> None:
+async def cmd_diagnose(message: Message, bot: Bot) -> None:
     """Muestra un reporte de diagnóstico de errores."""
     if message.chat.type not in ("group", "supergroup"):
         msg = await message.answer("⚠️ Este comando solo funciona en grupos.")
+        asyncio.create_task(delete_after(msg))
+        return
+
+    if not await is_admin(bot, message.chat.id, message.from_user.id):
+        msg = await message.answer("❌ Solo los administradores pueden usar este comando.")
         asyncio.create_task(delete_after(msg))
         return
 
@@ -53,12 +58,17 @@ async def cmd_diagnose(message: Message) -> None:
 
 
 @diagnose_router.message(Command("resolve"))
-async def cmd_resolve(message: Message, command: CommandObject) -> None:
+async def cmd_resolve(message: Message, command: CommandObject, bot: Bot) -> None:
     """Marca todos los errores no resueltos como resueltos.
     Uso: /resolve [reason opcional]
     """
     if message.chat.type not in ("group", "supergroup"):
         msg = await message.answer("⚠️ Este comando solo funciona en grupos.")
+        asyncio.create_task(delete_after(msg))
+        return
+
+    if not await is_admin(bot, message.chat.id, message.from_user.id):
+        msg = await message.answer("❌ Solo los administradores pueden resolver errores.")
         asyncio.create_task(delete_after(msg))
         return
 
@@ -77,10 +87,15 @@ async def cmd_resolve(message: Message, command: CommandObject) -> None:
 
 
 @diagnose_router.message(Command("errors"))
-async def cmd_errors(message: Message) -> None:
+async def cmd_errors(message: Message, bot: Bot) -> None:
     """Muestra los últimos errores sin resolver."""
     if message.chat.type not in ("group", "supergroup"):
         msg = await message.answer("⚠️ Este comando solo funciona en grupos.")
+        asyncio.create_task(delete_after(msg))
+        return
+
+    if not await is_admin(bot, message.chat.id, message.from_user.id):
+        msg = await message.answer("❌ Solo los administradores pueden ver errores.")
         asyncio.create_task(delete_after(msg))
         return
 

@@ -18,9 +18,6 @@ round_router = Router()
 @round_router.message(F.text, ~F.text.startswith("/"), F.chat.type.in_({"group", "supergroup"}))
 @error_tracker.track_errors(handler_name="handle_round_answer")
 async def handle_round_answer(message: Message, player: Player, bot: Bot) -> None:
-    if message.text.startswith("/"):
-        return
-
     if message.from_user and message.from_user.is_bot:
         return
 

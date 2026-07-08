@@ -7,7 +7,7 @@ from aiogram.types import Message
 
 from src.db.engine import async_session_factory
 from src.db.repositories.message_log_repository import MessageLogRepository
-from src.utils import delete_after
+from src.utils import delete_after, is_admin
 
 logger = logging.getLogger(__name__)
 clear_router = Router()
@@ -19,6 +19,11 @@ BATCH_SIZE = 100
 async def cmd_clear(message: Message, bot: Bot) -> None:
     if message.chat.type not in ("group", "supergroup"):
         msg = await message.answer("⚠️ Este comando solo funciona en grupos.")
+        asyncio.create_task(delete_after(msg))
+        return
+
+    if not await is_admin(bot, message.chat.id, message.from_user.id):
+        msg = await message.answer("❌ Solo los administradores pueden limpiar mensajes.")
         asyncio.create_task(delete_after(msg))
         return
 

@@ -334,7 +334,7 @@ ESTADO DE LA FASE: Completada (ver phase4e-guide.md)
 
 **Entregable:** Las 8 categorías con word lists masivas en BD. Auto-expansión persistente entre reinicios del bot. Modo de validación configurable por grupo vía `/settings`. Tests pasando.
 
-ESTADO DE LA FASE: PENDIENTE
+ESTADO DE LA FASE: COMPLETADA (ver phase4f-guide.md)
 
 ---
 

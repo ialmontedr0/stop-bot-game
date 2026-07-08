@@ -229,7 +229,7 @@ class SpellCorrector:
 
     # --- Correccion ortografica --------------------------------------------------------
 
-    async def correct(self, word: str, category: str) -> str:
+    async def correct(self, word: str, category: str, mode: Optional[str] = None) -> str:
         """Devuelve la forma corregida/normalizada de la palabra.
 
         Pipeline:
@@ -246,6 +246,7 @@ class SpellCorrector:
         Returns:
             str: _description_
         """
+        effective_mode = mode or self.mode
         norm = self.normalize(word)
         cat_lower = self._normalize_category(category)
         cat_words = self._word_lists.setdefault(cat_lower, set())
@@ -255,17 +256,17 @@ class SpellCorrector:
             return norm
 
         # 2 - Fuzzy match contra word list
-        if cat_words and self.mode != self.MODE_AI:
+        if cat_words and effective_mode != self.MODE_AI:
             best, score = self.fuzzy_match(word, list(cat_words))
             if best is not None:
                 best_norm = self.normalize(best)
                 cat_words.add(best_norm)
-                asyncio.ensure_future(self.add_to_word_list_persistent(best, category))
+                asyncio.create_task(self.add_to_word_list_persistent(best, category))
                 return best_norm
 
         # 3 - AI correccion (solo en modo AI o hybryd)
         if (
-            self.mode in (self.MODE_AI, self.MODE_HYBRID)
+            effective_mode in (self.MODE_AI, self.MODE_HYBRID)
             and self.api_calls_remaining > 0
         ):
             # Check Redis cache
@@ -278,7 +279,7 @@ class SpellCorrector:
                     if decoded:
                         cat_words.add(decoded)
                         asyncio.create_task(
-                            self.add_to_word_list_persistent(word, category)
+                            self.add_to_word_list_persistent(decoded, category)
                         )
                         return decoded
 
@@ -288,7 +289,7 @@ class SpellCorrector:
                 corrected_norm = self.normalize(corrected)
                 cat_words.add(corrected_norm)
                 asyncio.create_task(
-                    self.add_to_word_list_persistent(word, category)
+                    self.add_to_word_list_persistent(corrected_norm, category)
                 )
                 # Cachear en Redis (1 hora)
                 if redis:
@@ -387,7 +388,7 @@ class SpellCorrector:
 
     # --- Validacion semantica ----------------------------------------------------------
 
-    async def validate(self, word: str, category: str) -> bool:
+    async def validate(self, word: str, category: str, mode: Optional[str] = None) -> bool:
         """La palabra pertenece a la categoria?
 
         Pipeline:
@@ -403,6 +404,7 @@ class SpellCorrector:
         Returns:
             bool: _description_
         """
+        effective_mode = mode or self.mode
         norm = self.normalize(word)
         cat_lower = self._normalize_category(category)
         cat_words = self._word_lists.setdefault(cat_lower, set())
@@ -424,7 +426,7 @@ class SpellCorrector:
 
         # 3 - AI validation
         if (
-            self.mode in (self.MODE_AI, self.MODE_HYBRID)
+            effective_mode in (self.MODE_AI, self.MODE_HYBRID)
             and self.api_calls_remaining > 0
         ):
             redis = await self._get_redis()
@@ -436,7 +438,7 @@ class SpellCorrector:
                     if val == "true":
                         cat_words.add(norm)
                         asyncio.create_task(
-                            self.add_to_word_list_persistent(word, category)
+                            self.add_to_word_list_persistent(norm, category)
                         )
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai_cache"
                     return val == "true"
@@ -449,7 +451,7 @@ class SpellCorrector:
                 if result:
                     cat_words.add(norm)
                     asyncio.create_task(
-                        self.add_to_word_list_persistent(word, category)
+                        self.add_to_word_list_persistent(norm, category)
                     )
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai"
                 else:

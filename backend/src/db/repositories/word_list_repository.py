@@ -1,4 +1,4 @@
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import WordListItem
@@ -68,6 +68,6 @@ class WordListRepository:
         return result.rowcount
 
     async def count_by_category(self, category: str) -> int:
-        stmt = select(WordListItem.id).where(WordListItem.category == category)
+        stmt = select(func.count(WordListItem.id)).where(WordListItem.category == category)
         result = await self.session.execute(stmt)
-        return len(result.all())
+        return result.scalar() or 0

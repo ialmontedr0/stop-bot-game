@@ -1,0 +1,49 @@
+msgid ""
+msgstr ""
+"Language: pt\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "settings_title"
+msgstr "⚙️ Configuração do Grupo"
+
+msgid "settings_rounds"
+msgstr "🎯 Rodadas: {count}"
+
+msgid "settings_time"
+msgstr "⏱ Tempo: {seconds}s"
+
+msgid "settings_categories"
+msgstr "📋 Categorias ({count}/{total})"
+
+msgid "settings_include_n"
+msgstr "🔤 Ñ: {value}"
+
+msgid "settings_rounds_title"
+msgstr "🎯 Rodadas por Partida"
+
+msgid "settings_time_title"
+msgstr "⏱ Tempo por Rodada"
+
+msgid "settings_cats_title"
+msgstr "📋 Categorias Disponíveis"
+
+msgid "stats_title"
+msgstr "📊 Estatísticas do Grupo"
+
+msgid "profile_title"
+msgstr "👤 Seu Perfil"
+
+msgid "error_group_only"
+msgstr "❌ Este comando só funciona em grupos."
+
+msgid "yes"
+msgstr "Sim"
+
+msgid "no"
+msgstr "Não"
+
+msgid "back"
+msgstr "🔙 Voltar"
+
+msgid "close"
+msgstr "🔙 Fechar"

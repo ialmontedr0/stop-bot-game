@@ -16,8 +16,8 @@ from src.keyboards.lobby import lobby_keyboard
 from src.services.round_manager import (
     round_manager,
     TOTAL_ROUNDS,
-    ALPHABET,
     PLACEHOLDER,
+    get_alphabet,
 )
 
 
@@ -331,14 +331,11 @@ class LobbyManager:
             for game in stale:
                 await repo.update_game_status(game, STATUS_CANCELLED)
                 logger.info("Partida %s cancelada por stale", game.id)
-                
-    
+
     @staticmethod
     async def _get_group_config(group_chat_id: int) -> Optional[GroupConfig]:
         async with async_session_factory() as session:
-            stmt = select(GroupConfig).where(
-                GroupConfig.group_chat_id == group_chat_id
-            )
+            stmt = select(GroupConfig).where(GroupConfig.group_chat_id == group_chat_id)
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
@@ -356,10 +353,27 @@ class LobbyManager:
         group_config = await self._get_group_config(state.group_chat_id)
         validation_mode = group_config.validation_mode if group_config else "local"
 
+        # --- Leer configuracion de partida -----------------
+
+        # Pasar round_time y categories tambien al start_round
+        categories = None
+        round_time = 60
+        include_n = False
+        if group_config:
+            if group_config.categories:
+                categories = [
+                    c.strip() for c in group_config.categories.split(",") if c.strip()
+                ]
+            round_time = group_config.round_time
+            include_n = group_config.include_n
+
         from src.services.spell_corrector import get_corrector
 
         corrector = get_corrector()
+        # Usar una referencia local al modo — el corrector debe leer mode de cada llamada
+        # Temporal: pasamos el modo como parámetro en start_round / score engine
         corrector.mode = validation_mode
+
         logger.info(
             "Modo validacion para grupo %s: %s", state.group_chat_id, validation_mode
         )
@@ -391,9 +405,14 @@ class LobbyManager:
                 db_game.current_round = 1
                 await repo.update_game_status(db_game, STATUS_PLAYING)
 
-        letter = random.choice(ALPHABET)
+        letter = random.choice(get_alphabet(include_n))
 
-        total_rounds = db_game.total_rounds if db_game else TOTAL_ROUNDS
+        if group_config:
+            total_rounds = group_config.default_rounds
+        elif db_game:
+            total_rounds = db_game.total_rounds
+        else:
+            total_rounds = TOTAL_ROUNDS
 
         await round_manager.start_round(
             game_id=state.game_id,
@@ -405,6 +424,9 @@ class LobbyManager:
             player_names=player_names,
             bot=bot,
             host_telegram_id=state.host_telegram_id,
+            round_time=round_time,
+            categories=categories,
+            include_n=include_n,
         )
 
     # --- Limpieza --------------------------------------------------------------

@@ -1,0 +1,49 @@
+msgid ""
+msgstr ""
+"Language: en\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "settings_title"
+msgstr "⚙️ Group Settings"
+
+msgid "settings_rounds"
+msgstr "🎯 Rounds: {count}"
+
+msgid "settings_time"
+msgstr "⏱ Time: {seconds}s"
+
+msgid "settings_categories"
+msgstr "📋 Categories ({count}/{total})"
+
+msgid "settings_include_n"
+msgstr "🔤 Ñ: {value}"
+
+msgid "settings_rounds_title"
+msgstr "🎯 Rounds per Game"
+
+msgid "settings_time_title"
+msgstr "⏱ Time per Round"
+
+msgid "settings_cats_title"
+msgstr "📋 Available Categories"
+
+msgid "stats_title"
+msgstr "📊 Group Statistics"
+
+msgid "profile_title"
+msgstr "👤 Your Profile"
+
+msgid "error_group_only"
+msgstr "❌ This command only works in groups."
+
+msgid "yes"
+msgstr "Yes"
+
+msgid "no"
+msgstr "No"
+
+msgid "back"
+msgstr "🔙 Back"
+
+msgid "close"
+msgstr "🔙 Close"

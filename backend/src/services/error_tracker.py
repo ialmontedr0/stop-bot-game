@@ -347,7 +347,7 @@ class ErrorTracker:
             api_metrics = corrector.get_api_metrics()
             if api_metrics["total_calls"] > 0 or api_metrics["failed_calls"] > 0:
                 lines.append("│")
-                lines.append("│ LLM API Calls (ronda actual:)")
+                lines.append("│ LLM API Calls (acumuladas):")
                 lines.append(f"│    Provider: {api_metrics['provider']}")
                 lines.append(f"│    Modo: {api_metrics['mode']}")
                 lines.append(f"│    Total: {api_metrics['total_calls']}")
