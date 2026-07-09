@@ -1,7 +1,7 @@
 import logging
 from datetime import date, timedelta
 
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 
 from src.db.engine import async_session_factory
 from src.db.models import WeeklyLeaderboard
@@ -15,7 +15,6 @@ def _current_week_start() -> date:
 
 
 class LeaderboardRepository:
-
     @staticmethod
     async def upsert_player_week(
         player_id: int,
@@ -61,9 +60,7 @@ class LeaderboardRepository:
                 entry.rank = i + 1
 
             await session.commit()
-            logger.info(
-                "Ranks recalculados para semana %s: %s entries", ws, len(entries)
-            )
+            logger.info("Ranks recalculados para semana %s: %s entries", ws, len(entries))
 
     @staticmethod
     async def close_week(week_start: date | None = None) -> None:

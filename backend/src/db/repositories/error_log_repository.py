@@ -1,8 +1,8 @@
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
-from sqlalchemy import select, func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import ErrorLog
@@ -15,14 +15,14 @@ class ErrorLogRepository:
     async def create(
         self,
         level: str,
-        handler: Optional[str] = None,
-        user_id: Optional[int] = None,
-        game_id: Optional[int] = None,
-        telegram_id: Optional[int] = None,
-        exception_type: Optional[str] = None,
-        exception_message: Optional[str] = None,
-        traceback: Optional[str] = None,
-        context: Optional[dict[str, Any]] = None,
+        handler: str | None = None,
+        user_id: int | None = None,
+        game_id: int | None = None,
+        telegram_id: int | None = None,
+        exception_type: str | None = None,
+        exception_message: str | None = None,
+        traceback: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> ErrorLog:
         log = ErrorLog(
             level=level,
@@ -72,10 +72,7 @@ class ErrorLogRepository:
         return list(result.scalars().all())
 
     async def count_by_level(self) -> dict[str, int]:
-        stmt = (
-            select(ErrorLog.level, func.count(ErrorLog.id))
-            .group_by(ErrorLog.level)
-        )
+        stmt = select(ErrorLog.level, func.count(ErrorLog.id)).group_by(ErrorLog.level)
         result = await self.session.execute(stmt)
         return {row[0]: row[1] for row in result}
 
@@ -84,13 +81,11 @@ class ErrorLogRepository:
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
-    async def mark_resolved(self, error_id: int, resolution: Optional[str] = None) -> None:
+    async def mark_resolved(self, error_id: int, resolution: str | None = None) -> None:
         values: dict[str, Any] = {"resolved": True}
         if resolution:
             values["resolution"] = resolution
-        await self.session.execute(
-            update(ErrorLog).where(ErrorLog.id == error_id).values(**values)
-        )
+        await self.session.execute(update(ErrorLog).where(ErrorLog.id == error_id).values(**values))
         await self.session.commit()
 
     async def get_most_frequent_exception(self, limit: int = 5) -> list[tuple[str, int]]:

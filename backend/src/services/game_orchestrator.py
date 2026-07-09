@@ -2,24 +2,22 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Optional
 
 from aiogram import Bot
-from sqlalchemy import select
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import CallbackQuery
+from sqlalchemy import select
 
 from src.db.engine import async_session_factory
 from src.db.models import GamePlayer, GroupConfig, Player
 from src.db.repositories import GameRepository
 from src.keyboards.lobby import lobby_keyboard
 from src.services.round_manager import (
-    round_manager,
-    TOTAL_ROUNDS,
     PLACEHOLDER,
+    TOTAL_ROUNDS,
     get_alphabet,
+    round_manager,
 )
-
 
 MAX_PLAYERS = 10
 AUTO_START_DELAY = 30  # segundos tras el ultimo join
@@ -43,9 +41,9 @@ class LobbyState:
     message_id: int
     player_telegram_ids: list[int] = field(default_factory=list)
     player_display_names: list[str] = field(default_factory=list)
-    expire_task: Optional[asyncio.Task] = None
-    animation_task: Optional[asyncio.Task] = None
-    auto_start_task: Optional[asyncio.Task] = None
+    expire_task: asyncio.Task | None = None
+    animation_task: asyncio.Task | None = None
+    auto_start_task: asyncio.Task | None = None
     started: bool = False
     start_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -60,10 +58,10 @@ class LobbyManager:
     def has_lobby(self, group_chat_id: int) -> bool:
         return group_chat_id in self._lobbies
 
-    def get_lobby(self, group_chat_id: int) -> Optional[LobbyState]:
+    def get_lobby(self, group_chat_id: int) -> LobbyState | None:
         return self._lobbies.get(group_chat_id)
 
-    def get_lobby_by_game(self, game_id: int) -> Optional[LobbyState]:
+    def get_lobby_by_game(self, game_id: int) -> LobbyState | None:
         for state in self._lobbies.values():
             if state.game_id == game_id:
                 return state
@@ -72,16 +70,13 @@ class LobbyManager:
     # --- Crear lobby --------------------------------------------------------
     async def create_lobby(
         self, group_chat_id: int, host_player: Player, bot: Bot
-    ) -> Optional[str]:
+    ) -> str | None:
         async with async_session_factory() as session:
             repo = GameRepository(session)
 
             existing = await repo.get_active_game(group_chat_id)
             if existing:
-                if (
-                    existing.status == STATUS_LOBBY
-                    and group_chat_id not in self._lobbies
-                ):
+                if existing.status == STATUS_LOBBY and group_chat_id not in self._lobbies:
                     await repo.update_game_status(existing, STATUS_CANCELLED)
                 else:
                     return "⚠️ Ya hay una sala abierta en este grupo."
@@ -89,11 +84,7 @@ class LobbyManager:
             game = await repo.create_game(group_chat_id)
             await repo.add_player_to_game(game, host_player, is_host=True)
 
-        host_name = (
-            host_player.first_name
-            or host_player.username
-            or f"ID{host_player.telegram_id}"
-        )
+        host_name = host_player.first_name or host_player.username or f"ID{host_player.telegram_id}"
         text = self._format_lobby_message(
             title="🛑 STOP - Sala abierta", count=1, players=[host_name]
         )
@@ -200,17 +191,13 @@ class LobbyManager:
                     await callback.answer("❌ La partida ya comenzó.", show_alert=True)
                     return
                 if db_game and db_game.status == STATUS_CANCELLED:
-                    await callback.answer(
-                        "❌ Esta partida fue cancelada.", show_alert=True
-                    )
+                    await callback.answer("❌ Esta partida fue cancelada.", show_alert=True)
                     return
             await callback.answer("❌ Sala no encontrada.", show_alert=True)
             return
 
         if player.telegram_id != state.host_telegram_id:
-            await callback.answer(
-                "❌ Solo el host puede iniciar la partida.", show_alert=True
-            )
+            await callback.answer("❌ Solo el host puede iniciar la partida.", show_alert=True)
             return
 
         if len(state.player_telegram_ids) < MIN_PLAYERS_TO_START:
@@ -221,6 +208,23 @@ class LobbyManager:
             return
 
         await self._do_start(state, bot)
+
+    # --- Cancelar todas (graceful shutdown) ---------------------------------
+    async def cancel_all_games(self) -> None:
+        for game_id in list(self._lobbies.keys()):
+            state = self._lobbies.get(game_id)
+            if state:
+                state.cancelled = True
+                for task in (state.expire_task, state.animation_task, state.auto_start_task):
+                    if task and not task.done():
+                        task.cancel()
+            self._lobbies.pop(game_id, None)
+            logger.info("Lobby %s cancelado por shutdown", game_id)
+
+        from src.services.round_manager import round_manager
+
+        for gid in list(round_manager._rounds.keys()):
+            await round_manager.cancel_game(gid)
 
     # --- Detener partida ----------------------------------------------------
     async def cancel_game(self, group_chat_id: int, player: Player, bot: Bot) -> str:
@@ -251,9 +255,7 @@ class LobbyManager:
         if state:
             self._cleanup(state)
             try:
-                await bot.delete_message(
-                    chat_id=state.message_chat_id, message_id=state.message_id
-                )
+                await bot.delete_message(chat_id=state.message_chat_id, message_id=state.message_id)
             except TelegramBadRequest:
                 pass
         return "✅ Partida cancelada."
@@ -263,9 +265,7 @@ class LobbyManager:
         if state.auto_start_task and not state.auto_start_task.done():
             state.auto_start_task.cancel()
         if len(state.player_telegram_ids) >= MIN_PLAYERS_TO_START:
-            state.auto_start_task = asyncio.create_task(
-                self._auto_start_timer(state, bot)
-            )
+            state.auto_start_task = asyncio.create_task(self._auto_start_timer(state, bot))
 
     async def _auto_start_timer(self, state: LobbyState, bot: Bot) -> None:
         try:
@@ -345,7 +345,7 @@ class LobbyManager:
                 logger.info("Partida %s cancelada por stale", game.id)
 
     @staticmethod
-    async def _get_group_config(group_chat_id: int) -> Optional[GroupConfig]:
+    async def _get_group_config(group_chat_id: int) -> GroupConfig | None:
         async with async_session_factory() as session:
             stmt = select(GroupConfig).where(GroupConfig.group_chat_id == group_chat_id)
             result = await session.execute(stmt)
@@ -355,9 +355,7 @@ class LobbyManager:
     async def _do_start(self, state: LobbyState, bot: Bot) -> None:
         async with state.start_lock:
             if state.started:
-                logger.warning(
-                    "_do_start llamado múltiples veces para game %s", state.game_id
-                )
+                logger.warning("_do_start llamado múltiples veces para game %s", state.game_id)
                 return
             state.started = True
         self._cleanup(state)
@@ -374,20 +372,14 @@ class LobbyManager:
         include_n = False
         if group_config:
             if group_config.categories:
-                categories = [
-                    c.strip() for c in group_config.categories.split(",") if c.strip()
-                ]
+                categories = [c.strip() for c in group_config.categories.split(",") if c.strip()]
             round_time = group_config.round_time
             include_n = group_config.include_n
 
-        logger.info(
-            "Modo validacion para grupo %s: %s", state.group_chat_id, validation_mode
-        )
+        logger.info("Modo validacion para grupo %s: %s", state.group_chat_id, validation_mode)
 
         try:
-            await bot.delete_message(
-                chat_id=state.message_chat_id, message_id=state.message_id
-            )
+            await bot.delete_message(chat_id=state.message_chat_id, message_id=state.message_id)
         except TelegramBadRequest:
             pass
 
@@ -411,9 +403,7 @@ class LobbyManager:
         for i in range(3, 0, -1):
             await asyncio.sleep(1)
             try:
-                await count_msg.edit_text(
-                    f"<b>{i}...</b>"
-                )
+                await count_msg.edit_text(f"<b>{i}...</b>")
             except TelegramBadRequest:
                 pass
         try:
@@ -477,8 +467,7 @@ class LobbyManager:
             f"incorporación (mín. {MIN_PLAYERS_TO_START} jugadores)."
         )
         lines.append(
-            f"El host puede presionar <b>Iniciar</b> o esperar a "
-            f"completar {MAX_PLAYERS} jugadores."
+            f"El host puede presionar <b>Iniciar</b> o esperar a completar {MAX_PLAYERS} jugadores."
         )
         return "\n".join(lines)
 

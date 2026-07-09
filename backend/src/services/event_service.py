@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class EventService:
-
     @staticmethod
     async def get_active_multiplier() -> float:
         now = datetime.now(timezone.utc).replace(tzinfo=None)

@@ -1,9 +1,32 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 LETTERS = [
-    "A", "B", "C", "D", "E", "F", "G", "H", "I",
-    "J", "K", "L", "M", "N", "O", "P", "Q", "R",
-    "S", "T", "U", "V", "W", "X", "Y", "Z",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
 ]
 
 
@@ -32,16 +55,18 @@ def letter_keyboard(game_id: int, include_n: bool = False) -> InlineKeyboardMark
     keyboard = []
     start = 0
     for size in row_sizes:
-        chunk = letters[start:start + size]
+        chunk = letters[start : start + size]
         if not chunk:
             break
-        keyboard.append([
-            InlineKeyboardButton(
-                text=letter,
-                callback_data=f"letter:{game_id}:{letter}",
-            )
-            for letter in chunk
-        ])
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=letter,
+                    callback_data=f"letter:{game_id}:{letter}",
+                )
+                for letter in chunk
+            ]
+        )
         start += size
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 

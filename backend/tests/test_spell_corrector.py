@@ -1,7 +1,7 @@
 import pytest
 
 from src.core.text_utils import normalize_text
-from src.services.spell_corrector import SpellCorrector, SEED_WORDS
+from src.services.spell_corrector import SEED_WORDS, SpellCorrector
 
 # --- normalize_text --------------------------------------------------------------
 
@@ -291,8 +291,14 @@ class TestSeedWords:
 
     def test_each_category_has_words(self):
         db_categories = {
-            "color", "fruta", "pais", "nombre",
-            "apellido", "artista", "novela/serie", "cosa",
+            "color",
+            "fruta",
+            "pais",
+            "nombre",
+            "apellido",
+            "artista",
+            "novela/serie",
+            "cosa",
         }
         for cat, words in SEED_WORDS.items():
             if cat in db_categories:
@@ -302,9 +308,7 @@ class TestSeedWords:
     def test_all_words_are_normalized(self):
         for cat, words in SEED_WORDS.items():
             for w in words:
-                assert w == normalize_text(w), (
-                    f"Seed word '{w}' in '{cat}' is not normalized"
-                )
+                assert w == normalize_text(w), f"Seed word '{w}' in '{cat}' is not normalized"
 
 
 class TestValidateAgainstList:
@@ -366,9 +370,7 @@ class TestAIMode:
     @pytest.mark.asyncio
     async def test_validate_hybrid_rejects_unknown(self):
         """En modo hybrid, si no hay match fuzzy y no hay API key, retorna True (default permisivo)."""
-        sc = SpellCorrector(
-            mode="hybrid", api_key=None, api_url=None, ai_provider="gemini"
-        )
+        sc = SpellCorrector(mode="hybrid", api_key=None, api_url=None, ai_provider="gemini")
         sc._word_lists["nombre"] = {"juan"}
         result = await sc.validate("Xyzzy", "Nombre")
         assert result is True  # default permisivo por falta de API key
@@ -425,9 +427,11 @@ class TestAIMode:
 def _redis_is_available() -> bool:
     try:
         import redis.asyncio as aioredis
+
         r = aioredis.Redis.from_url("redis://localhost:6379/0", socket_connect_timeout=1)
         result = r.ping()
         import asyncio
+
         asyncio.run(result)
         return True
     except Exception:

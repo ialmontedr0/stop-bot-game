@@ -34,11 +34,7 @@ def settings_main_keyboard(
                 text=f"🎯 Rondas: {current_rounds}", callback_data="settings_rondas"
             )
         ],
-        [
-            InlineKeyboardButton(
-                text=f"⏱  Tiempo: {current_time}s", callback_data="settings_tiempo"
-            )
-        ],
+        [InlineKeyboardButton(text=f"⏱  Tiempo: {current_time}s", callback_data="settings_tiempo")],
         [
             InlineKeyboardButton(
                 text=f"📋 Categorias ({len(current_categories)}/{len(ALL_CATEGORIES)})",
@@ -50,11 +46,7 @@ def settings_main_keyboard(
                 text=f"🔤 Ñ: {'Si' if include_n else 'No'}", callback_data="toggle_n"
             )
         ],
-        [
-            InlineKeyboardButton(
-                text=f"⚡ Modo: {mode_label}", callback_data="settings_mode"
-            )
-        ],
+        [InlineKeyboardButton(text=f"⚡ Modo: {mode_label}", callback_data="settings_mode")],
         [InlineKeyboardButton(text="🔙 Cerrar", callback_data="settings_close")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -108,9 +100,7 @@ def settings_mode_keyboard(current: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def settings_cats_keyboard(
-    all_cats: list[str], selected_cats: list[str]
-) -> InlineKeyboardMarkup:
+def settings_cats_keyboard(all_cats: list[str], selected_cats: list[str]) -> InlineKeyboardMarkup:
     rows = []
     for cat in all_cats:
         checked = "✅ " if cat in selected_cats else "⬜ "

@@ -30,6 +30,7 @@ class UserExistsMiddleware(BaseMiddleware):
                 logger.exception("Error al obtener/crear jugador %s", user.id)
                 try:
                     from src.services.error_tracker import error_tracker
+
                     await error_tracker.capture_exception(
                         exc=exc,
                         handler="UserExistsMiddleware",
@@ -37,9 +38,7 @@ class UserExistsMiddleware(BaseMiddleware):
                         context={"middleware": "user_exists"},
                     )
                 except Exception:
-                    logger.exception(
-                        "ErrorTracker falló al capturar error en UserExistsMiddleware"
-                    )
+                    logger.exception("ErrorTracker falló al capturar error en UserExistsMiddleware")
                 bot = data.get("bot")
                 if bot and user:
                     try:

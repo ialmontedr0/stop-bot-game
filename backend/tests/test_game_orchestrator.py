@@ -53,16 +53,12 @@ class TestFormatLobbyMessage:
 
     def test_format_with_multiple_players(self):
         players = ["Alice", "Bob", "Charlie"]
-        result = LobbyManager._format_lobby_message(
-            "Title", count=3, players=players
-        )
+        result = LobbyManager._format_lobby_message("Title", count=3, players=players)
         for name in players:
             assert name in result
 
     def test_format_no_players(self):
-        result = LobbyManager._format_lobby_message(
-            "Title", count=0, players=[]
-        )
+        result = LobbyManager._format_lobby_message("Title", count=0, players=[])
         assert "1." not in result
 
 
@@ -120,12 +116,20 @@ class TestLobbyManagerQueries:
 
     def test_get_lobby_by_game_with_multiple(self, fresh_manager):
         s1 = LobbyState(
-            game_id=1, group_chat_id=-1, host_telegram_id=1, host_name="A",
-            message_chat_id=-1, message_id=1,
+            game_id=1,
+            group_chat_id=-1,
+            host_telegram_id=1,
+            host_name="A",
+            message_chat_id=-1,
+            message_id=1,
         )
         s2 = LobbyState(
-            game_id=2, group_chat_id=-2, host_telegram_id=2, host_name="B",
-            message_chat_id=-2, message_id=2,
+            game_id=2,
+            group_chat_id=-2,
+            host_telegram_id=2,
+            host_name="B",
+            message_chat_id=-2,
+            message_id=2,
         )
         fresh_manager._lobbies[-1] = s1
         fresh_manager._lobbies[-2] = s2
@@ -137,8 +141,12 @@ class TestCreateLobby:
     @patch.object(_game_orch_mod, "async_session_factory")
     @patch.object(_game_orch_mod, "GameRepository")
     async def test_create_lobby_success(
-        self, mock_repo_cls, mock_session_factory, fresh_manager,
-        mock_host_player, mock_bot,
+        self,
+        mock_repo_cls,
+        mock_session_factory,
+        fresh_manager,
+        mock_host_player,
+        mock_bot,
     ):
         mock_session = MagicMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
@@ -161,8 +169,12 @@ class TestCreateLobby:
     @patch.object(_game_orch_mod, "async_session_factory")
     @patch.object(_game_orch_mod, "GameRepository")
     async def test_create_lobby_rejects_duplicate(
-        self, mock_repo_cls, mock_session_factory, fresh_manager,
-        mock_host_player, mock_bot,
+        self,
+        mock_repo_cls,
+        mock_session_factory,
+        fresh_manager,
+        mock_host_player,
+        mock_bot,
     ):
         mock_session = MagicMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
@@ -181,21 +193,31 @@ class TestCreateLobby:
 class TestJoinLobby:
     @pytest.mark.asyncio
     async def test_join_nonexistent_lobby(
-        self, fresh_manager, mock_player, mock_callback, mock_bot,
+        self,
+        fresh_manager,
+        mock_player,
+        mock_callback,
+        mock_bot,
     ):
         mock_callback.data = "join:999"
         await fresh_manager.join_lobby(999, mock_player, mock_callback, mock_bot)
-        mock_callback.answer.assert_awaited_with(
-            "❌ Esta sala ya no existe.", show_alert=True
-        )
+        mock_callback.answer.assert_awaited_with("❌ Esta sala ya no existe.", show_alert=True)
 
     @pytest.mark.asyncio
     async def test_join_when_already_in_lobby(
-        self, fresh_manager, mock_host_player, mock_callback, mock_bot,
+        self,
+        fresh_manager,
+        mock_host_player,
+        mock_callback,
+        mock_bot,
     ):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=999, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=999,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
             player_telegram_ids=[999],
             player_display_names=["Host"],
         )
@@ -203,17 +225,23 @@ class TestJoinLobby:
         mock_callback.data = "join:1"
 
         await fresh_manager.join_lobby(1, mock_host_player, mock_callback, mock_bot)
-        mock_callback.answer.assert_awaited_with(
-            "✅ Ya estás en la partida", show_alert=False
-        )
+        mock_callback.answer.assert_awaited_with("✅ Ya estás en la partida", show_alert=False)
 
     @pytest.mark.asyncio
     async def test_join_full_lobby(
-        self, fresh_manager, mock_player, mock_callback, mock_bot,
+        self,
+        fresh_manager,
+        mock_player,
+        mock_callback,
+        mock_bot,
     ):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=999, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=999,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
             player_telegram_ids=list(range(MAX_PLAYERS)),
             player_display_names=[f"P{i}" for i in range(MAX_PLAYERS)],
         )
@@ -227,20 +255,30 @@ class TestJoinLobby:
 class TestStartGame:
     @pytest.mark.asyncio
     async def test_start_nonexistent(
-        self, fresh_manager, mock_host_player, mock_callback, mock_bot,
+        self,
+        fresh_manager,
+        mock_host_player,
+        mock_callback,
+        mock_bot,
     ):
         await fresh_manager.start_game(999, mock_host_player, mock_callback, mock_bot)
-        mock_callback.answer.assert_awaited_with(
-            "❌ Sala no encontrada.", show_alert=True
-        )
+        mock_callback.answer.assert_awaited_with("❌ Sala no encontrada.", show_alert=True)
 
     @pytest.mark.asyncio
     async def test_start_not_host(
-        self, fresh_manager, mock_player, mock_callback, mock_bot,
+        self,
+        fresh_manager,
+        mock_player,
+        mock_callback,
+        mock_bot,
     ):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=999, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=999,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
             player_telegram_ids=[999, 888],
             player_display_names=["H", "P"],
         )
@@ -252,11 +290,19 @@ class TestStartGame:
 
     @pytest.mark.asyncio
     async def test_start_not_enough_players(
-        self, fresh_manager, mock_host_player, mock_callback, mock_bot,
+        self,
+        fresh_manager,
+        mock_host_player,
+        mock_callback,
+        mock_bot,
     ):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=999, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=999,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
             player_telegram_ids=[999],
             player_display_names=["H"],
         )
@@ -272,8 +318,12 @@ class TestCancelGame:
     @patch.object(_game_orch_mod, "async_session_factory")
     @patch.object(_game_orch_mod, "GameRepository")
     async def test_cancel_no_active_game(
-        self, mock_repo_cls, mock_session_factory, fresh_manager,
-        mock_host_player, mock_bot,
+        self,
+        mock_repo_cls,
+        mock_session_factory,
+        fresh_manager,
+        mock_host_player,
+        mock_bot,
     ):
         mock_session = MagicMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
@@ -288,8 +338,12 @@ class TestCancelGame:
 class TestCleanup:
     def test_cleanup_removes_from_dict(self, fresh_manager):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=1, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=1,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
         )
         fresh_manager._lobbies[-100] = state
         fresh_manager._cleanup(state)
@@ -299,8 +353,12 @@ class TestCleanup:
     async def test_cleanup_cancels_tasks(self, fresh_manager):
         task = asyncio.get_event_loop().create_task(asyncio.sleep(100))
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=1, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=1,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
             expire_task=task,
         )
         fresh_manager._lobbies[-100] = state
@@ -310,8 +368,12 @@ class TestCleanup:
 
     def test_cleanup_does_not_crash_on_none_tasks(self, fresh_manager):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=1, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=1,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
         )
         fresh_manager._lobbies[-100] = state
         fresh_manager._cleanup(state)
@@ -321,8 +383,12 @@ class TestResetAutoStart:
     @pytest.mark.asyncio
     async def test_auto_start_created_with_enough_players(self, fresh_manager):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=1, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=1,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
             player_telegram_ids=[1, 2],
             player_display_names=["A", "B"],
         )
@@ -334,8 +400,12 @@ class TestResetAutoStart:
 
     def test_auto_start_not_created_with_one_player(self, fresh_manager):
         state = LobbyState(
-            game_id=1, group_chat_id=-100, host_telegram_id=1, host_name="H",
-            message_chat_id=-100, message_id=1,
+            game_id=1,
+            group_chat_id=-100,
+            host_telegram_id=1,
+            host_name="H",
+            message_chat_id=-100,
+            message_id=1,
             player_telegram_ids=[1],
             player_display_names=["A"],
         )

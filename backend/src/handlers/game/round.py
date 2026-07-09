@@ -1,13 +1,13 @@
 import logging
 
-from aiogram import Bot, Router, F
+from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery, Message
 
 from src.db.models import Player
 from src.services.error_tracker import error_tracker
 from src.services.round_manager import (
-    round_manager,
     get_alphabet,
+    round_manager,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,9 @@ async def handle_round_answer(message: Message, player: Player, bot: Bot) -> Non
             bot=bot,
         )
     except Exception:
-        logger.exception("Error al procesar respuesta de %s en game %s", player.telegram_id, state.game_id)
+        logger.exception(
+            "Error al procesar respuesta de %s en game %s", player.telegram_id, state.game_id
+        )
 
 
 @round_router.callback_query(F.data.startswith("stop:"))

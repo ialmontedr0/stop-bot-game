@@ -1,6 +1,6 @@
-import pytest
 from datetime import date, datetime
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import (

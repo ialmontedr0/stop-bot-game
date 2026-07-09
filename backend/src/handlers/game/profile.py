@@ -4,11 +4,11 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.utils.markdown import hbold
+from sqlalchemy import func, select
 
-from sqlalchemy import select, func
-from src.services.xp_service import xp_service
 from src.db.engine import async_session_factory
-from src.db.models import Player, GamePlayer, Game, Answer
+from src.db.models import Answer, Game, GamePlayer, Player
+from src.services.xp_service import xp_service
 
 logger = logging.getLogger(__name__)
 profile_router = Router()
@@ -50,9 +50,9 @@ async def cmd_profile(message: Message, player: Player) -> None:
             wins_count = (await session.execute(player_wins_stmt)).scalar() or 0
 
             # --- Puntaje total ---
-            total_score_stmt = select(
-                func.coalesce(func.sum(GamePlayer.score), 0)
-            ).where(GamePlayer.player_id == player.id)
+            total_score_stmt = select(func.coalesce(func.sum(GamePlayer.score), 0)).where(
+                GamePlayer.player_id == player.id
+            )
             total_score = (await session.execute(total_score_stmt)).scalar() or 0
 
             # --- MVP times (ser el que hizo Stop más veces) ---
@@ -65,9 +65,7 @@ async def cmd_profile(message: Message, player: Player) -> None:
             mvp_count = (await session.execute(mvp_stmt)).scalar() or 0
 
             # --- Rating de aciertos ---
-            total_answers_stmt = select(func.count(Answer.id)).where(
-                Answer.player_id == player.id
-            )
+            total_answers_stmt = select(func.count(Answer.id)).where(Answer.player_id == player.id)
             total_answers = (await session.execute(total_answers_stmt)).scalar() or 0
 
             correct_answers_stmt = (
@@ -75,13 +73,9 @@ async def cmd_profile(message: Message, player: Player) -> None:
                 .where(Answer.player_id == player.id)
                 .where(Answer.is_correct)
             )
-            correct_answers = (
-                await session.execute(correct_answers_stmt)
-            ).scalar() or 0
+            correct_answers = (await session.execute(correct_answers_stmt)).scalar() or 0
 
-            accuracy = (
-                (correct_answers / total_answers * 100) if total_answers > 0 else 0
-            )
+            accuracy = (correct_answers / total_answers * 100) if total_answers > 0 else 0
 
         xp_data = await xp_service.get_profile(player.id)
 
@@ -91,8 +85,7 @@ async def cmd_profile(message: Message, player: Player) -> None:
             f"🏆 Victorias: {wins_count}",
             f"⭐ MVP (Stops): {mvp_count}",
             f"📊 Puntaje total: {total_score} pts",
-            f"🎯 Rating de aciertos: {accuracy:.1f}% "
-            f"({correct_answers}/{total_answers})",
+            f"🎯 Rating de aciertos: {accuracy:.1f}% ({correct_answers}/{total_answers})",
         ]
 
         # Seccion XP
@@ -102,10 +95,7 @@ async def cmd_profile(message: Message, player: Player) -> None:
             lines.append(f"{hbold('⚡ XP y Nivel')}")
             lines.append(f"🎖 Nivel {xp_data['level']}{title_text}")
             lines.append(f"✨ XP total: {xp_data['total_xp']}")
-            lines.append(
-                f"📈 Progreso al nivel {xp_data['level'] + 1}: "
-                f"{xp_data['progress_pct']}%"
-            )
+            lines.append(f"📈 Progreso al nivel {xp_data['level'] + 1}: {xp_data['progress_pct']}%")
             bar_len = 10
             filled = int(xp_data["progress_pct"] / 100 * bar_len)
             bar = "🟩" * filled + "⬜" * (bar_len - filled)
@@ -122,9 +112,7 @@ async def cmd_profile(message: Message, player: Player) -> None:
         # Rank semanal (opcional)
         from src.services.leaderboard import leaderboard_service
 
-        rank_data = await leaderboard_service.get_player_rank_by_telegram(
-            player.telegram_id
-        )
+        rank_data = await leaderboard_service.get_player_rank_by_telegram(player.telegram_id)
         if rank_data:
             lines.append("")
             lines.append(f"{hbold('📊 Rank Semanal')}")
@@ -135,6 +123,4 @@ async def cmd_profile(message: Message, player: Player) -> None:
 
     except Exception as e:
         logger.exception("Error en /profile: %s", e)
-        await status_msg.edit_text(
-            "❌ Error al cargar tu perfil. Intenta de nuevo más tarde."
-        )
+        await status_msg.edit_text("❌ Error al cargar tu perfil. Intenta de nuevo más tarde.")

@@ -1,7 +1,7 @@
 import logging
 
 from aiogram import Bot, Router
-from aiogram.filters import ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER
+from aiogram.filters import IS_MEMBER, IS_NOT_MEMBER, ChatMemberUpdatedFilter
 from aiogram.types import ChatMemberUpdated
 
 from src.db.engine import async_session_factory

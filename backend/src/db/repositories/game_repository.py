@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from sqlalchemy import Row, select
 
@@ -12,7 +11,7 @@ class GameRepository(BaseRepository[Game]):
     def __init__(self, session):
         super().__init__(Game, session)
 
-    async def get_active_game(self, group_chat_id: int) -> Optional[Game]:
+    async def get_active_game(self, group_chat_id: int) -> Game | None:
         stmt = (
             select(Game)
             .where(Game.group_chat_id == group_chat_id)
@@ -23,7 +22,7 @@ class GameRepository(BaseRepository[Game]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, game_id: int) -> Optional[Game]:
+    async def get_by_id(self, game_id: int) -> Game | None:
         return await self.session.get(Game, game_id)
 
     async def create_game(self, group_chat_id: int, total_rounds: int = 5) -> Game:

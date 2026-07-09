@@ -1,7 +1,18 @@
 from aiogram.types import InlineKeyboardMarkup
 
 from src.keyboards.lobby import lobby_keyboard
-from src.keyboards.round import stop_keyboard, letter_keyboard, LETTERS
+from src.keyboards.round import LETTERS, letter_keyboard, stop_keyboard
+from src.keyboards.settings import (
+    ALL_CATEGORIES,
+    ROUND_OPTIONS,
+    TIME_OPTIONS,
+    MODE_OPTIONS,
+    settings_main_keyboard,
+    settings_rounds_keyboard,
+    settings_time_keyboard,
+    settings_mode_keyboard,
+    settings_cats_keyboard,
+)
 
 
 def test_lobby_keyboard_returns_inline_keyboard():
@@ -98,4 +109,103 @@ def test_letter_keyboard_rows_grouped():
     assert len(rows[0]) == 6
     assert len(rows[1]) == 7
     assert len(rows[2]) == 7
-    assert len(rows[3]) == 6  # U-Z (6 letras restantes)
+    assert len(rows[3]) == 6
+
+
+# ── Settings keyboards ──────────────────────────────────────────────────────
+
+
+def test_settings_main_keyboard_returns_inline_keyboard():
+    markup = settings_main_keyboard(
+        current_rounds=5, current_time=60,
+        current_categories=ALL_CATEGORIES, include_n=False,
+    )
+    assert isinstance(markup, InlineKeyboardMarkup)
+
+
+def test_settings_main_keyboard_has_all_sections():
+    markup = settings_main_keyboard(
+        current_rounds=10, current_time=45,
+        current_categories=ALL_CATEGORIES[:4], include_n=True,
+        current_mode="hybrid",
+    )
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert any("Rondas" in t for t in texts)
+    assert any("Tiempo" in t for t in texts)
+    assert any("Categorias" in t for t in texts)
+    assert any("Ñ" in t for t in texts)
+    assert any("Híbrido" in t for t in texts)
+
+
+def test_settings_main_keyboard_close_button():
+    markup = settings_main_keyboard(
+        current_rounds=5, current_time=60,
+        current_categories=ALL_CATEGORIES, include_n=False,
+    )
+    last_row = markup.inline_keyboard[-1]
+    assert last_row[0].callback_data == "settings_close"
+
+
+def test_settings_rounds_keyboard():
+    markup = settings_rounds_keyboard(current=10)
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    for opt in ROUND_OPTIONS:
+        assert any(str(opt) in t and "rondas" in t for t in texts)
+    assert any("Volver" in t for t in texts)
+
+
+def test_settings_rounds_keyboard_selected():
+    markup = settings_rounds_keyboard(current=10)
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    selected_row = [t for t in texts if "10 rondas" in t][0]
+    assert "•" in selected_row
+
+
+def test_settings_time_keyboard():
+    markup = settings_time_keyboard(current=60)
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    for opt in TIME_OPTIONS:
+        assert any(f"{opt}s" in t for t in texts)
+    assert any("Volver" in t for t in texts)
+
+
+def test_settings_time_keyboard_selected():
+    markup = settings_time_keyboard(current=60)
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    selected_row = [t for t in texts if "60s" in t][0]
+    assert "•" in selected_row
+
+
+def test_settings_mode_keyboard():
+    markup = settings_mode_keyboard(current="local")
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    for _, label in MODE_OPTIONS:
+        assert any(label in t for t in texts)
+    assert any("Volver" in t for t in texts)
+
+
+def test_settings_mode_keyboard_selected():
+    markup = settings_mode_keyboard(current="ai")
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    ai_row = [t for t in texts if "AI" in t][0]
+    assert "•" in ai_row
+
+
+def test_settings_cats_keyboard():
+    markup = settings_cats_keyboard(ALL_CATEGORIES, ALL_CATEGORIES[:4])
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    for cat in ALL_CATEGORIES:
+        assert any(cat in t for t in texts)
+    assert any("Volver" in t for t in texts)
+
+
+def test_settings_cats_keyboard_checkmarks():
+    selected = ALL_CATEGORIES[:3]
+    markup = settings_cats_keyboard(ALL_CATEGORIES, selected)
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    for cat in selected:
+        cat_row = [t for t in texts if cat in t][0]
+        assert "✅" in cat_row
+    for cat in ALL_CATEGORIES[3:]:
+        cat_row = [t for t in texts if cat in t][0]
+        assert "⬜" in cat_row

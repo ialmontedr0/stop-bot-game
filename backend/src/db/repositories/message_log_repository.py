@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, delete
+
+from sqlalchemy import delete, select
+
 from src.db.models import MessageLog
 
 
@@ -17,9 +19,7 @@ class MessageLogRepository:
 
     async def get_today_messages(self, chat_id: int) -> list[int]:
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-        today = now_utc.replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
         stmt = (
             select(MessageLog.message_id)
             .where(MessageLog.chat_id == chat_id)

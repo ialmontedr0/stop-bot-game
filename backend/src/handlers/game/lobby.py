@@ -1,14 +1,14 @@
 import asyncio
 import logging
 
-from aiogram import Bot, Router, F
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from src.utils import delete_after
 from src.db.models import Player
 from src.services.error_tracker import error_tracker
 from src.services.game_orchestrator import lobby_manager
+from src.utils import delete_after
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,7 @@ async def cmd_cancel(message: Message, player: Player, bot: Bot) -> None:
         asyncio.create_task(delete_after(msg))
         return
 
-    result = await lobby_manager.cancel_game(
-        group_chat_id=message.chat.id, player=player, bot=bot
-    )
+    result = await lobby_manager.cancel_game(group_chat_id=message.chat.id, player=player, bot=bot)
     msg = await message.answer(result)
     asyncio.create_task(delete_after(msg))
 
@@ -79,9 +77,7 @@ async def callback_start(callback: CallbackQuery, player: Player, bot: Bot) -> N
         await callback.answer("❌ Datos inválidos.", show_alert=True)
         return
     try:
-        await lobby_manager.start_game(
-            game_id=game_id, player=player, callback=callback, bot=bot
-        )
+        await lobby_manager.start_game(game_id=game_id, player=player, callback=callback, bot=bot)
     except Exception:
         logger.exception("Error en start_game: game_id=%s jugador=%s", game_id, player.telegram_id)
         await callback.answer("❌ Error al iniciar la partida.", show_alert=True)

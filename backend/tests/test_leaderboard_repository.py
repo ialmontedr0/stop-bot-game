@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 import sys
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.db.repositories.leaderboard_repository import LeaderboardRepository
 

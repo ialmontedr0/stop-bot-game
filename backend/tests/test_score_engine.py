@@ -1,13 +1,12 @@
-
 from src.db.models import Answer
 from src.services.score_engine import (
-    ScoreEngine,
-    _normalize,
-    _is_valid_word,
-    _group_by_category,
-    _determine_answer_scores,
-    UNIQUE_POINTS,
     FIRST_COMPLETER_BONUS,
+    UNIQUE_POINTS,
+    ScoreEngine,
+    _determine_answer_scores,
+    _group_by_category,
+    _is_valid_word,
+    _normalize,
 )
 
 
@@ -382,9 +381,7 @@ class TestScoreEngineFuzzyMatching:
             111: [make_answer(1, "Nombre", "Fernando")],
             222: [make_answer(2, "Nombre", "Juan")],
         }
-        totals, details = engine.evaluate(
-            answers, 1, first_completer_id=111, spell_corrector=sc
-        )
+        totals, details = engine.evaluate(answers, 1, first_completer_id=111, spell_corrector=sc)
         assert totals[111] == UNIQUE_POINTS + FIRST_COMPLETER_BONUS  # 60
         assert totals[222] == UNIQUE_POINTS  # 50
 
@@ -474,9 +471,7 @@ class TestScoreEngineWordListValidation:
         sc = SpellCorrector(fuzzy_threshold=75)
 
         answers = {
-            111: [
-                make_answer(1, "Inventada", "CualquierCosa")
-            ],
+            111: [make_answer(1, "Inventada", "CualquierCosa")],
         }
         totals, details = engine.evaluate(answers, 1, spell_corrector=sc)
         assert totals[111] == 50  # comportamiento original: se permite

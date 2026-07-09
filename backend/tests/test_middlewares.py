@@ -81,15 +81,14 @@ async def test_ignores_event_without_user(middleware, mock_handler):
 @pytest.fixture
 def user_exists_mw():
     from src.middlewares.user_exists import UserExistsMiddleware
+
     return UserExistsMiddleware()
 
 
 @pytest.mark.asyncio
 @patch("src.middlewares.user_exists.PlayerRepository")
 @patch("src.middlewares.user_exists.async_session_factory")
-async def test_user_exists_creates_player(
-    mock_session_factory, mock_repo_cls, user_exists_mw
-):
+async def test_user_exists_creates_player(mock_session_factory, mock_repo_cls, user_exists_mw):
     mock_session = AsyncMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -120,9 +119,7 @@ async def test_user_exists_creates_player(
 @pytest.mark.asyncio
 @patch("src.middlewares.user_exists.PlayerRepository")
 @patch("src.middlewares.user_exists.async_session_factory")
-async def test_user_exists_skips_bot(
-    mock_session_factory, mock_repo_cls, user_exists_mw
-):
+async def test_user_exists_skips_bot(mock_session_factory, mock_repo_cls, user_exists_mw):
     handler = AsyncMock()
     event = MagicMock()
     event.__class__ = Message
@@ -139,9 +136,7 @@ async def test_user_exists_skips_bot(
 @pytest.mark.asyncio
 @patch("src.middlewares.user_exists.PlayerRepository")
 @patch("src.middlewares.user_exists.async_session_factory")
-async def test_user_exists_skips_no_user(
-    mock_session_factory, mock_repo_cls, user_exists_mw
-):
+async def test_user_exists_skips_no_user(mock_session_factory, mock_repo_cls, user_exists_mw):
     handler = AsyncMock()
     event = MagicMock()
     event.__class__ = Message

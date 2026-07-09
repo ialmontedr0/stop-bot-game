@@ -1,6 +1,9 @@
 """Test to verify .env loading in pytest context."""
+
 import os
-from dotenv import load_dotenv, find_dotenv
+
+from dotenv import find_dotenv, load_dotenv
+
 
 def test_dotenv_loading():
     print(f"\nfind_dotenv()={find_dotenv()!r}")

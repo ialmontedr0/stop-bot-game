@@ -4,7 +4,6 @@ import pytest
 
 from src.db.models import Player
 
-
 # ── handle_round_answer ─────────────────────────────────────────────────────
 
 

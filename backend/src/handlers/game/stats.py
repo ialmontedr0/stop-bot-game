@@ -1,12 +1,11 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from aiogram import Router, Bot
+from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.utils.markdown import hbold
-
-from sqlalchemy import select, func, desc, cast, Date
+from sqlalchemy import Date, cast, desc, func, select
 
 from src.db.engine import async_session_factory
 from src.db.models import Game, GamePlayer, Player
@@ -47,9 +46,7 @@ async def cmd_stats(message: Message, bot: Bot) -> None:
                 .join(Game, GamePlayer.game_id == Game.id)
                 .where(Game.group_chat_id == group_chat_id)
                 .where(Game.status == "finished")
-                .group_by(
-                    Player.id, Player.telegram_id, Player.first_name, Player.username
-                )
+                .group_by(Player.id, Player.telegram_id, Player.first_name, Player.username)
                 .order_by(desc("total_score"))
                 .limit(10)
             )
@@ -84,9 +81,11 @@ async def cmd_stats(message: Message, bot: Bot) -> None:
         # Enviar gráfico de actividad
         if daily_counts:
             from src.image_generator import generate_activity_chart
+
             chart_bytes = generate_activity_chart(daily_counts)
             if chart_bytes:
                 from aiogram.types import BufferedInputFile
+
                 photo = BufferedInputFile(chart_bytes, filename="activity.png")
                 await bot.send_photo(chat_id=message.chat.id, photo=photo)
 
@@ -116,6 +115,4 @@ async def cmd_stats(message: Message, bot: Bot) -> None:
 
     except Exception as e:
         logger.exception("Error en /stats: %s", e)
-        await status_msg.edit_text(
-            "❌ Error al generar estadísticas. Intenta de nuevo más tarde."
-        )
+        await status_msg.edit_text("❌ Error al generar estadísticas. Intenta de nuevo más tarde.")

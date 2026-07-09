@@ -1,7 +1,9 @@
 import asyncio
+
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
+
 from src.utils import delete_after
 
 start_router = Router()
@@ -9,8 +11,9 @@ start_router = Router()
 
 @start_router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    from src.image_generator import generate_welcome_image
     from aiogram.types import BufferedInputFile
+
+    from src.image_generator import generate_welcome_image
 
     img_bytes = generate_welcome_image()
     text = (
@@ -43,8 +46,9 @@ async def cmd_start(message: Message) -> None:
 
 @start_router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    from src.image_generator import generate_help_image
     from aiogram.types import BufferedInputFile
+
+    from src.image_generator import generate_help_image
 
     img_bytes = generate_help_image()
     text = (

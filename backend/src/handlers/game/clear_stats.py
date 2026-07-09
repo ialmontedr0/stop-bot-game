@@ -1,9 +1,8 @@
 import logging
 
-from aiogram import Router, Bot
+from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
-
 from sqlalchemy import text
 
 from src.db.engine import async_session_factory

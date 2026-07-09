@@ -1,22 +1,22 @@
 import logging
 
-from aiogram import Bot, Router, F
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.markdown import hbold
 
 from src.db.engine import async_session_factory
-from src.db.models import Player, GroupConfig
+from src.db.models import GroupConfig, Player
 from src.db.repositories.group_config_repository import GroupConfigRepository
+from src.i18n import get_user_locale, t
 from src.keyboards.settings import (
     ALL_CATEGORIES,
+    settings_cats_keyboard,
     settings_main_keyboard,
+    settings_mode_keyboard,
     settings_rounds_keyboard,
     settings_time_keyboard,
-    settings_cats_keyboard,
-    settings_mode_keyboard,
 )
-from src.i18n import t, get_user_locale
 from src.utils import is_admin
 
 logger = logging.getLogger(__name__)
@@ -47,9 +47,7 @@ async def cmd_settings(message: Message, player: Player, bot: Bot) -> None:
         return
 
     if not await is_admin(bot, message.chat.id, message.from_user.id):
-        await message.reply(
-            "❌ Solo los administradores del grupo pueden usar este comando."
-        )
+        await message.reply("❌ Solo los administradores del grupo pueden usar este comando.")
         return
 
     config = await _get_config(message.chat.id)
@@ -172,9 +170,7 @@ async def toggle_cat(callback: CallbackQuery) -> None:
 
         if cat in selected:
             if len(selected) <= 4:
-                await callback.answer(
-                    "❌ Mínimo 4 categorías requeridas.", show_alert=True
-                )
+                await callback.answer("❌ Mínimo 4 categorías requeridas.", show_alert=True)
                 return
             selected.remove(cat)
         else:

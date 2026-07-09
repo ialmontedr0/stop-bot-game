@@ -2,7 +2,8 @@ import asyncio
 import functools
 import logging
 import traceback as tb
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from src.db.engine import async_session_factory
 from src.db.repositories.error_log_repository import ErrorLogRepository
@@ -36,8 +37,7 @@ KNOWN_SOLUTIONS: dict[str, tuple[str, str]] = {
     ),
     # Redis
     "redis.exceptions.ConnectionError": (
-        "Redis no está disponible. "
-        "Revisa que redis-server esté corriendo y REDIS_URL en .env.",
+        "Redis no está disponible. Revisa que redis-server esté corriendo y REDIS_URL en .env.",
         "CRITICAL",
     ),
     "redis.exceptions.TimeoutError": (
@@ -67,8 +67,7 @@ KNOWN_SOLUTIONS: dict[str, tuple[str, str]] = {
     ),
     # HTTP / API
     "httpx.ConnectError": (
-        "Error de conexión a API externa. "
-        "Revisa la URL configurada en settings.spell_api_url.",
+        "Error de conexión a API externa. Revisa la URL configurada en settings.spell_api_url.",
         "MEDIUM",
     ),
     "httpx.TimeoutException": (
@@ -147,20 +146,19 @@ class ErrorTracker:
     async def capture_exception(
         self,
         exc: BaseException,
-        handler: Optional[str] = None,
-        user_id: Optional[int] = None,
-        game_id: Optional[int] = None,
-        telegram_id: Optional[int] = None,
-        context: Optional[dict[str, Any]] = None,
+        handler: str | None = None,
+        user_id: int | None = None,
+        game_id: int | None = None,
+        telegram_id: int | None = None,
+        context: dict[str, Any] | None = None,
         level: str = "ERROR",
-    ) -> Optional[int]:
+    ) -> int | None:
         """Persiste un error en la tabla error_logs.
         Retorna el ID del log creado, o None si falla la conexión a DB.
         """
         module = type(exc).__module__
         exc_type = (
-            type(exc).__qualname__ if module == "builtins"
-            else f"{module}.{type(exc).__qualname__}"
+            type(exc).__qualname__ if module == "builtins" else f"{module}.{type(exc).__qualname__}"
         )
         exc_msg = str(exc)[:2000] if str(exc) else "Sin mensaje"
         tb_str = "".join(tb.format_exception(type(exc), exc, exc.__traceback__))[:5000]
@@ -197,7 +195,7 @@ class ErrorTracker:
 
     def track_errors(
         self,
-        handler_name: Optional[str] = None,
+        handler_name: str | None = None,
         include_user: bool = True,
         include_game: bool = True,
     ) -> Callable[[F], F]:
@@ -264,7 +262,7 @@ class ErrorTracker:
 
     async def generate_report(
         self,
-        game_id: Optional[int] = None,
+        game_id: int | None = None,
         minutes: int = 60,
     ) -> str:
         """Genera un reporte de diagnóstico en texto plano.
@@ -300,9 +298,7 @@ class ErrorTracker:
             for exc_type, count in freq:
                 sol, severity = _get_solution(exc_type)
                 sev_emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "ℹ️"}
-                lines.append(
-                    f"│    {sev_emoji.get(severity, '❓')} {exc_type} ({count} veces)"
-                )
+                lines.append(f"│    {sev_emoji.get(severity, '❓')} {exc_type} ({count} veces)")
         lines.append("│")
         lines.append("│  📄 Últimos errores:")
 
@@ -351,9 +347,7 @@ class ErrorTracker:
                 lines.append(f"│    Modo: {api_metrics['mode']}")
                 lines.append(f"│    Total: {api_metrics['total_calls']}")
                 lines.append(f"│    Fallos: {api_metrics['failed_calls']}")
-                lines.append(
-                    f"│    Restantes: {api_metrics['remaining']}/{api_metrics['limit']}"
-                )
+                lines.append(f"│    Restantes: {api_metrics['remaining']}/{api_metrics['limit']}")
 
         except Exception:
             logger.warning("No se pudieron obtener métricas de la API de corrección")

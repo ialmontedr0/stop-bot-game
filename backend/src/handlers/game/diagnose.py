@@ -32,6 +32,7 @@ async def cmd_diagnose(message: Message, bot: Bot) -> None:
     try:
         async with async_session_factory() as session:
             from src.db.repositories import GameRepository
+
             repo = GameRepository(session)
             game = await repo.get_active_game(message.chat.id)
             if game:
@@ -48,7 +49,7 @@ async def cmd_diagnose(message: Message, bot: Bot) -> None:
     if len(report) <= MAX_LENGTH:
         await message.reply(report)
     else:
-        parts = [report[i:i + MAX_LENGTH] for i in range(0, len(report), MAX_LENGTH)]
+        parts = [report[i : i + MAX_LENGTH] for i in range(0, len(report), MAX_LENGTH)]
         for i, part in enumerate(parts):
             if i == 0:
                 msg = await message.reply(part)

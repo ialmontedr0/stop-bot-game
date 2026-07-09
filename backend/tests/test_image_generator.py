@@ -1,5 +1,6 @@
 from unittest.mock import patch
-from src.image_generator import generate_round_letter_image, generate_podium_image
+
+from src.image_generator import generate_podium_image, generate_round_letter_image
 
 
 class TestGenerateRoundLetterImage:

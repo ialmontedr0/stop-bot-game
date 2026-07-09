@@ -1,10 +1,10 @@
 # Router para logica del juego
 from .diagnose import diagnose_router
+from .leaderboard import leaderboard_router
 from .lobby import game_router
+from .profile import profile_router
 from .round import round_router
 from .stats import stats_router
-from .profile import profile_router
-from .leaderboard import leaderboard_router
 
 __all__ = [
     "game_router",

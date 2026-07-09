@@ -4,8 +4,10 @@ NOTA: Requiere SPELL_API_KEY configurada en .env.
 """
 
 import os
+
 import pytest
 from dotenv import load_dotenv
+
 from src.services.spell_corrector import SpellCorrector
 
 load_dotenv()
@@ -28,8 +30,7 @@ def _make_sc(**kwargs):
         api_key=kwargs.get("api_key", os.getenv("SPELL_API_KEY")),
         api_url=kwargs.get(
             "api_url",
-            os.getenv("SPELL_API_URL",
-                       "https://api.groq.com/openai/v1"),
+            os.getenv("SPELL_API_URL", "https://api.groq.com/openai/v1"),
         ),
         ai_model=kwargs.get("ai_model", os.getenv("SPELL_AI_MODEL")),
         fuzzy_threshold=kwargs.get("fuzzy_threshold", 75),

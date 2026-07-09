@@ -1,10 +1,10 @@
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.db.models import Answer, GamePlayer, Player, Round
 from src.core.text_utils import normalize_text as _normalize_text
+from src.db.models import Answer, GamePlayer, Player, Round
+
 from .base import BaseRepository
 
 
@@ -29,7 +29,7 @@ class RoundRepository(BaseRepository[Round]):
         await self.session.refresh(r)
         return r
 
-    async def get_active_round(self, game_id: int) -> Optional[Round]:
+    async def get_active_round(self, game_id: int) -> Round | None:
         stmt = (
             select(Round)
             .where(Round.game_id == game_id)
@@ -44,7 +44,7 @@ class RoundRepository(BaseRepository[Round]):
         self,
         round_id: int,
         status: str,
-        stopped_by_player_id: Optional[int] = None,
+        stopped_by_player_id: int | None = None,
     ) -> Round:
         r = await self.session.get(Round, round_id)
         if not r:
@@ -69,9 +69,7 @@ class RoundRepository(BaseRepository[Round]):
         )
         gp = (await self.session.execute(stmt)).scalar_one_or_none()
         if not gp:
-            raise ValueError(
-                f"GamePlayer not found for game={game_id} player={player_id}"
-            )
+            raise ValueError(f"GamePlayer not found for game={game_id} player={player_id}")
 
         old = await self.session.execute(
             select(Answer).where(
@@ -130,7 +128,7 @@ class RoundRepository(BaseRepository[Round]):
 
     async def get_game_player_by_telegram(
         self, game_id: int, telegram_id: int
-    ) -> Optional[GamePlayer]:
+    ) -> GamePlayer | None:
         stmt = (
             select(GamePlayer)
             .join(Player, GamePlayer.player_id == Player.id)

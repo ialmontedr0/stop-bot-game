@@ -1,4 +1,4 @@
-from sqlalchemy import select, delete, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import WordListItem
@@ -47,12 +47,7 @@ class WordListRepository:
         for norm, word in words:
             if norm not in existing and norm not in seen_in_batch:
                 self.session.add(
-                    WordListItem(
-                        category=category,
-                        word=word,
-                        normalized=norm,
-                        source=source
-                    )
+                    WordListItem(category=category, word=word, normalized=norm, source=source)
                 )
                 seen_in_batch.add(norm)
                 count += 1

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from src.db.models import Base, Game, GamePlayer, Player
+from src.db.models import Answer, Base, Game, GamePlayer, Player
 
 
 @pytest.fixture(scope="function")
@@ -21,9 +21,7 @@ async def async_engine():
 
 @pytest.fixture
 async def async_session(async_engine) -> AsyncSession:
-    session_factory = async_sessionmaker(
-        async_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
         yield session
 
@@ -86,3 +84,35 @@ def mock_callback() -> MagicMock:
     cb.message.chat.id = -100123456789
     cb.message.message_id = 1
     return cb
+
+
+@pytest.fixture
+async def sqlite_in_memory():
+    """Base SQLite in-memory para tests de integracion (sin PostgreSQL)."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as session:
+        yield session
+    await engine.dispose()
+
+
+def _make_answer(
+    player_id: int,
+    word_slot: str,
+    raw_text: str,
+    is_correct: bool | None = None,
+    score: int = 0,
+    id: int = 0,
+) -> Answer:
+    """Crea un objeto Answer para tests sin BD."""
+    return Answer(
+        id=id,
+        player_id=player_id,
+        word_slot=word_slot,
+        raw_text=raw_text,
+        normalized_text=raw_text.lower() if raw_text else "",
+        is_correct=is_correct,
+        score=score,
+    )

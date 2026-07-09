@@ -1,11 +1,11 @@
 from __future__ import annotations
-import logging
-import asyncio
-import re
-from typing import Optional
 
-from src.db.models import Answer
+import asyncio
+import logging
+import re
+
 from src.core.text_utils import normalize_text
+from src.db.models import Answer
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +53,13 @@ class SpellCorrector:
     def __init__(
         self,
         mode: str = MODE_LOCAL,
-        redis_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        api_url: Optional[str] = None,
+        redis_url: str | None = None,
+        api_key: str | None = None,
+        api_url: str | None = None,
         api_limit: int = 20,
         fuzzy_threshold: int = 75,
         ai_provider: str = "openai",
-        ai_model: Optional[str] = None,
+        ai_model: str | None = None,
     ) -> None:
         self.mode = mode
         self._redis_url = redis_url
@@ -85,11 +85,7 @@ class SpellCorrector:
         return task
 
     def _default_model(self) -> str:
-        return (
-            "gemini-2.0-flash"
-            if self.ai_provider == self.PROVIDER_GEMINI
-            else "gpt-4o-mini"
-        )
+        return "gemini-2.0-flash" if self.ai_provider == self.PROVIDER_GEMINI else "gpt-4o-mini"
 
     # --- API calls tracking --------------------------------------------------------
 
@@ -139,7 +135,7 @@ class SpellCorrector:
         self,
         word: str,
         candidates: list[str],
-    ) -> tuple[Optional[str], float]:
+    ) -> tuple[str | None, float]:
         """Busca el mejor match >= threshold.
 
         Args:
@@ -152,7 +148,7 @@ class SpellCorrector:
         from rapidfuzz import fuzz
 
         word_norm = self.normalize(word)
-        best: Optional[str] = None
+        best: str | None = None
         best_score: float = 0.0
 
         for c in candidates:
@@ -171,7 +167,7 @@ class SpellCorrector:
 
     def cluster_answers(
         self,
-        answers: list[tuple[int, "Answer"]],  # noqa: E401
+        answers: list[tuple[int, Answer]],  # noqa: E401
     ) -> list[set[int]]:
         """Agrupa player_ids por respuestas consideradas iguales via fuzzy matching.
 
@@ -194,7 +190,7 @@ class SpellCorrector:
             if _is_valid_word(ans.raw_text)
         ]
         if not valid:
-            return [{pid} for pid, _, _ in answers]
+            return [{pid} for pid, _ in answers]
 
         # Fase 1: exact match clusters
         exact: dict[str, set[int]] = {}
@@ -237,9 +233,7 @@ class SpellCorrector:
 
     # --- Correccion ortografica --------------------------------------------------------
 
-    async def correct(
-        self, word: str, category: str, mode: Optional[str] = None
-    ) -> str:
+    async def correct(self, word: str, category: str, mode: str | None = None) -> str:
         """Devuelve la forma corregida/normalizada de la palabra.
 
         Pipeline:
@@ -271,14 +265,13 @@ class SpellCorrector:
             if best is not None:
                 best_norm = self.normalize(best)
                 cat_words.add(best_norm)
-                self._track_task(asyncio.create_task(self.add_to_word_list_persistent(best, category)))
+                self._track_task(
+                    asyncio.create_task(self.add_to_word_list_persistent(best, category))
+                )
                 return best_norm
 
         # 3 - AI correccion (solo en modo AI o hybryd)
-        if (
-            effective_mode in (self.MODE_AI, self.MODE_HYBRID)
-            and self.api_calls_remaining > 0
-        ):
+        if effective_mode in (self.MODE_AI, self.MODE_HYBRID) and self.api_calls_remaining > 0:
             # Check Redis cache
             redis = await self._get_redis()
             cache_key = f"spell:correct:{norm}:{cat_lower}"
@@ -288,9 +281,9 @@ class SpellCorrector:
                     decoded = cached.decode() if isinstance(cached, bytes) else cached
                     if decoded:
                         cat_words.add(decoded)
-                        self._track_task(asyncio.create_task(
-                            self.add_to_word_list_persistent(decoded, category)
-                        ))
+                        self._track_task(
+                            asyncio.create_task(self.add_to_word_list_persistent(decoded, category))
+                        )
                         return decoded
 
             corrected = await self._ai_correct(word)
@@ -298,9 +291,9 @@ class SpellCorrector:
                 self._api_calls += 1
                 corrected_norm = self.normalize(corrected)
                 cat_words.add(corrected_norm)
-                self._track_task(asyncio.create_task(
-                    self.add_to_word_list_persistent(corrected_norm, category)
-                ))
+                self._track_task(
+                    asyncio.create_task(self.add_to_word_list_persistent(corrected_norm, category))
+                )
                 # Cachear en Redis (1 hora)
                 if redis:
                     await redis.setex(cache_key, 3600, corrected_norm)
@@ -311,7 +304,7 @@ class SpellCorrector:
         # 4 - Fallback
         return norm
 
-    async def _ai_correct(self, word: str) -> Optional[str]:
+    async def _ai_correct(self, word: str) -> str | None:
         """Corrige una palabra usando API de OpenAI (o compatible)
 
         Args:
@@ -398,9 +391,7 @@ class SpellCorrector:
 
     # --- Validacion semantica ----------------------------------------------------------
 
-    async def validate(
-        self, word: str, category: str, mode: Optional[str] = None
-    ) -> bool:
+    async def validate(self, word: str, category: str, mode: str | None = None) -> bool:
         """La palabra pertenece a la categoria?
 
         Pipeline:
@@ -432,15 +423,14 @@ class SpellCorrector:
             if best is not None:
                 best_norm = self.normalize(best)
                 cat_words.add(best_norm)
-                self._track_task(asyncio.create_task(self.add_to_word_list_persistent(best, category)))
+                self._track_task(
+                    asyncio.create_task(self.add_to_word_list_persistent(best, category))
+                )
                 self._validation_source[f"{cat_lower}:{norm}"] = "fuzzy"
                 return True
 
         # 3 - AI validation
-        if (
-            effective_mode in (self.MODE_AI, self.MODE_HYBRID)
-            and self.api_calls_remaining > 0
-        ):
+        if effective_mode in (self.MODE_AI, self.MODE_HYBRID) and self.api_calls_remaining > 0:
             redis = await self._get_redis()
             cache_key = f"spell:validate:{norm}:{cat_lower}"
             if redis:
@@ -449,9 +439,9 @@ class SpellCorrector:
                     val = cached.decode() if isinstance(cached, bytes) else cached
                     if val == "true":
                         cat_words.add(norm)
-                        self._track_task(asyncio.create_task(
-                            self.add_to_word_list_persistent(norm, category)
-                        ))
+                        self._track_task(
+                            asyncio.create_task(self.add_to_word_list_persistent(norm, category))
+                        )
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai_cache"
                     return val == "true"
 
@@ -462,9 +452,9 @@ class SpellCorrector:
                     await redis.setex(cache_key, 3600, str(result).lower())
                 if result:
                     cat_words.add(norm)
-                    self._track_task(asyncio.create_task(
-                        self.add_to_word_list_persistent(norm, category)
-                    ))
+                    self._track_task(
+                        asyncio.create_task(self.add_to_word_list_persistent(norm, category))
+                    )
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai"
                 else:
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai_rejected"
@@ -476,7 +466,7 @@ class SpellCorrector:
         self._validation_source[f"{cat_lower}:{norm}"] = "default"
         return True
 
-    async def _ai_validate(self, word: str, category: str) -> Optional[bool]:
+    async def _ai_validate(self, word: str, category: str) -> bool | None:
         """Pregunta a la IA si la palabra pertenece a la categoria.
 
         Args:
@@ -594,9 +584,7 @@ class SpellCorrector:
                     )
                     await session.commit()
         except Exception:
-            logger.exception(
-                "Error persistiendo palabra aprendida: %s -> %s", word, cat_lower
-            )
+            logger.exception("Error persistiendo palabra aprendida: %s -> %s", word, cat_lower)
 
     def is_in_word_list(self, word: str, category: str) -> bool:
         norm = self.normalize(word)
@@ -626,9 +614,7 @@ class SpellCorrector:
                         len(words),
                     )
         except Exception:
-            logger.exception(
-                "Error cargando word lists desde DB — las listas quedan vacias"
-            )
+            logger.exception("Error cargando word lists desde DB — las listas quedan vacias")
 
     @staticmethod
     def _normalize_category(category: str) -> str:
@@ -693,7 +679,7 @@ class SpellCorrector:
 
 # --- Lazy singleton (evita circular imports) ---------------------------------
 
-_corrector_instance: Optional[SpellCorrector] = None
+_corrector_instance: SpellCorrector | None = None
 
 
 def get_corrector() -> SpellCorrector:

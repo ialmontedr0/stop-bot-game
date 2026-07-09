@@ -35,9 +35,11 @@ async def cmd_leaderboard(message: Message) -> None:
             return
 
         entries = [(e["rank"], e["name"], e["score"]) for e in rows]
-        from src.image_generator import generate_leaderboard_image
-        from PIL import Image as PILImage
         from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        from src.image_generator import generate_leaderboard_image
 
         # Descargar fotos de perfil para top 3
         profile_photos = {}
@@ -55,17 +57,13 @@ async def cmd_leaderboard(message: Message) -> None:
                     file = await message.bot.get_file(file_id)
                     photo_bytes_io = await message.bot.download_file(file.file_path)
                     photo_data = photo_bytes_io.read()
-                    profile_photos[rank] = PILImage.open(BytesIO(photo_data)).convert(
-                        "RGBA"
-                    )
+                    profile_photos[rank] = PILImage.open(BytesIO(photo_data)).convert("RGBA")
                 else:
                     profile_photos[rank] = None
             except Exception:
                 profile_photos[rank] = None
 
-        img_bytes = generate_leaderboard_image(
-            entries, _current_week_range(), profile_photos
-        )
+        img_bytes = generate_leaderboard_image(entries, _current_week_range(), profile_photos)
         if img_bytes:
             from aiogram.types import BufferedInputFile
 
@@ -92,9 +90,7 @@ async def cmd_leaderboard(message: Message) -> None:
 
     except Exception:
         logger.exception("Error en /leaderboard")
-        await status_msg.edit_text(
-            "❌ Error al cargar el leaderboard. Intenta de nuevo más tarde."
-        )
+        await status_msg.edit_text("❌ Error al cargar el leaderboard. Intenta de nuevo más tarde.")
 
 
 @leaderboard_router.message(Command("rank"))
@@ -105,8 +101,7 @@ async def cmd_rank(message: Message) -> None:
     data = await leaderboard_service.get_player_rank_by_telegram(message.from_user.id)
     if not data:
         await message.reply(
-            "Aún no apareces en el leaderboard semanal.\n"
-            "¡Juega una partida para empezar!"
+            "Aún no apareces en el leaderboard semanal.\n¡Juega una partida para empezar!"
         )
         return
 

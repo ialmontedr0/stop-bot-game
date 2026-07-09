@@ -1,7 +1,6 @@
 import logging
 import os
 from io import BytesIO
-from typing import Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -25,10 +24,8 @@ def _get_font(size: int = 40) -> ImageFont.FreeTypeFont:
     font_path = os.path.join(_FONT_DIR, "Montserrat-Bold.ttf")
     try:
         return ImageFont.truetype(font_path, size)
-    except (IOError, OSError):
-        logger.warning(
-            "Fuente Montserrat no encontrada en %s, usando default", font_path
-        )
+    except OSError:
+        logger.warning("Fuente Montserrat no encontrada en %s, usando default", font_path)
         return ImageFont.load_default()
 
 
@@ -37,21 +34,19 @@ def _load_bg(name: str, size: tuple[int, int]) -> Image.Image:
     try:
         img = Image.open(path).resize(size, Image.LANCZOS)
         return img.convert("RGBA")
-    except (IOError, OSError):
+    except OSError:
         logger.warning("Background %s no encontrado, usando solido", path)
         return Image.new("RGBA", size, (30, 30, 60, 255))
 
 
-def _center_text(
-    draw: ImageDraw, text: str, font: ImageFont, y: int, color=WHITE
-) -> None:
+def _center_text(draw: ImageDraw, text: str, font: ImageFont, y: int, color=WHITE) -> None:
     bbox = draw.textbbox((0, 0), text, font=font)
     w = bbox[2] - bbox[0]
     x = (draw.im.size[0] - w) // 2
     draw.text((x, y), text, font=font, fill=color)
 
 
-def _load_profile_photo(image_data: Optional[bytes], size: int = 60) -> Image.Image:
+def _load_profile_photo(image_data: bytes | None, size: int = 60) -> Image.Image:
     if image_data:
         try:
             img = Image.open(BytesIO(image_data)).convert("RGBA")
@@ -62,7 +57,7 @@ def _load_profile_photo(image_data: Optional[bytes], size: int = 60) -> Image.Im
     try:
         placeholder = Image.open(_PLACEHOLDER_PATH).convert("RGBA")
         return placeholder.resize((size, size), Image.LANCZOS)
-    except (IOError, OSError):
+    except OSError:
         # Fallback: circulo gris
         img = Image.new("RGBA", (size, size), (80, 80, 100, 255))
         return img
@@ -94,23 +89,19 @@ def generate_round_letter_image(
     letter: str,
     round_number: int,
     category_count: int = 8,
-) -> Optional[bytes]:
+) -> bytes | None:
     try:
         img = _load_bg("round_bg.png", (256, 256))
         draw = ImageDraw.Draw(img)
 
         font_small = _get_font(20)
-        _center_text(
-            draw, f"RONDA {round_number}", font_small, 30, (200, 200, 255, 255)
-        )
+        _center_text(draw, f"RONDA {round_number}", font_small, 30, (200, 200, 255, 255))
 
         font_big = _get_font(100)
         _center_text(draw, letter.upper(), font_big, 75, WHITE)
 
         font_cat = _get_font(14)
-        _center_text(
-            draw, f"{category_count} categorias", font_cat, 210, (180, 180, 200, 255)
-        )
+        _center_text(draw, f"{category_count} categorias", font_cat, 210, (180, 180, 200, 255))
 
         buf = BytesIO()
         img.save(buf, format="PNG")
@@ -124,8 +115,8 @@ def generate_round_letter_image(
 def generate_podium_image(
     winners: list[tuple[str, int]],
     game_rounds: int = 5,
-    profile_photos: Optional[list[Optional[Image.Image]]] = None,
-) -> Optional[bytes]:
+    profile_photos: list[Image.Image | None] | None = None,
+) -> bytes | None:
     try:
         img = _load_bg("podium_bg.png", (400, 300))
         draw = ImageDraw.Draw(img)
@@ -134,15 +125,11 @@ def generate_podium_image(
         _center_text(draw, "PODIO FINAL", font_title, 12, GOLD)
 
         font_sub = _get_font(10)
-        rondas_text = (
-            "1 ronda jugada" if game_rounds == 1 else f"{game_rounds} rondas jugadas"
-        )
+        rondas_text = "1 ronda jugada" if game_rounds == 1 else f"{game_rounds} rondas jugadas"
         _center_text(draw, rondas_text, font_sub, 28, (180, 180, 190, 255))
 
         if not winners:
-            _center_text(
-                draw, "Sin puntuaciones", _get_font(18), 140, (255, 100, 100, 255)
-            )
+            _center_text(draw, "Sin puntuaciones", _get_font(18), 140, (255, 100, 100, 255))
             buf = BytesIO()
             img.save(buf, format="PNG")
             buf.seek(0)
@@ -172,9 +159,7 @@ def generate_podium_image(
 
         if len(winners) > 3:
             font_rest = _get_font(9)
-            rest_text = " | ".join(
-                f"{i + 1}. {n}: {s}" for i, (n, s) in enumerate(winners[3:])
-            )
+            rest_text = " | ".join(f"{i + 1}. {n}: {s}" for i, (n, s) in enumerate(winners[3:]))
             _center_text(draw, rest_text, font_rest, 275, (150, 150, 150, 255))
 
         buf = BytesIO()
@@ -189,8 +174,8 @@ def generate_podium_image(
 def generate_leaderboard_image(
     entries: list[tuple[int, str, int]],
     week_label: str = "Esta semana",
-    profile_photos: Optional[dict[int, Image.Image]] = None,
-) -> Optional[bytes]:
+    profile_photos: dict[int, Image.Image] | None = None,
+) -> bytes | None:
     try:
         img = Image.new("RGBA", (600, 800), (20, 20, 40, 255))
         draw = ImageDraw.Draw(img)
@@ -202,9 +187,7 @@ def generate_leaderboard_image(
         _center_text(draw, week_label, font_sub, 75, (200, 200, 200, 255))
 
         if not entries:
-            _center_text(
-                draw, "Sin datos aun", _get_font(32), 380, (255, 100, 100, 255)
-            )
+            _center_text(draw, "Sin datos aun", _get_font(32), 380, (255, 100, 100, 255))
             buf = BytesIO()
             img.save(buf, format="PNG")
             buf.seek(0)
@@ -248,7 +231,7 @@ def generate_achievement_card(
     description: str,
     emoji: str = "T",
     color: tuple = (255, 215, 0),
-) -> Optional[bytes]:
+) -> bytes | None:
     try:
         img = Image.new("RGBA", (400, 200), (25, 25, 50, 255))
         draw = ImageDraw.Draw(img)
@@ -276,13 +259,13 @@ def generate_achievement_card(
         return None
 
 
-def generate_activity_chart(daily_data: list[tuple[str, int]]) -> Optional[bytes]:
+def generate_activity_chart(daily_data: list[tuple[str, int]]) -> bytes | None:
     try:
         import matplotlib
 
         matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
         import matplotlib.font_manager as fm
+        import matplotlib.pyplot as plt
 
         font_path = os.path.join(_FONT_DIR, "Montserrat-Bold.ttf")
         if os.path.exists(font_path):
@@ -329,15 +312,13 @@ def generate_activity_chart(daily_data: list[tuple[str, int]]) -> Optional[bytes
         return None
 
 
-def generate_welcome_image() -> Optional[bytes]:
+def generate_welcome_image() -> bytes | None:
     try:
         img = Image.new("RGBA", (400, 300), (25, 25, 50, 255))
         draw = ImageDraw.Draw(img)
 
         borde_color = (100, 100, 200, 255)
-        draw.rounded_rectangle(
-            [5, 5, 395, 295], radius=20, outline=borde_color, width=4
-        )
+        draw.rounded_rectangle([5, 5, 395, 295], radius=20, outline=borde_color, width=4)
 
         font_title = _get_font(28)
         _center_text(draw, "STOP", font_title, 40, (255, 215, 0, 255))
@@ -353,13 +334,11 @@ def generate_welcome_image() -> Optional[bytes]:
             logo_x = (400 - logo.width) // 2
             logo_y = (300 - logo.height) // 2 + 10  # +10 para ajuste vertical
             img.paste(logo, (logo_x, logo_y), logo)
-        except (IOError, OSError):
+        except OSError:
             logger.warning("Logo no encontrado en %s, omitiendo", logo_path)
 
         font_desc = _get_font(14)
-        _center_text(
-            draw, "Clasico juego de palabras", font_desc, 220, (180, 180, 200, 255)
-        )
+        _center_text(draw, "Clasico juego de palabras", font_desc, 220, (180, 180, 200, 255))
         _center_text(draw, "en Telegram", font_desc, 245, (180, 180, 200, 255))
 
         buf = BytesIO()
@@ -371,15 +350,13 @@ def generate_welcome_image() -> Optional[bytes]:
         return None
 
 
-def generate_help_image() -> Optional[bytes]:
+def generate_help_image() -> bytes | None:
     try:
         img = Image.new("RGBA", (400, 300), (25, 25, 50, 255))
         draw = ImageDraw.Draw(img)
 
         borde_color = (100, 100, 200, 255)
-        draw.rounded_rectangle(
-            [5, 5, 395, 295], radius=20, outline=borde_color, width=4
-        )
+        draw.rounded_rectangle([5, 5, 395, 295], radius=20, outline=borde_color, width=4)
 
         font_title = _get_font(24)
         _center_text(draw, "COMO JUGAR?", font_title, 25, (255, 215, 0, 255))
@@ -392,7 +369,7 @@ def generate_help_image() -> Optional[bytes]:
             help_x = (400 - help_img.width) // 2
             help_y = (300 - help_img.height) // 2 - 20
             img.paste(help_img, (help_x, help_y), help_img)
-        except (IOError, OSError):
+        except OSError:
             logger.warning("Help image no encontrada en %s, omitiendo", help_path)
 
         font_steps = _get_font(13)

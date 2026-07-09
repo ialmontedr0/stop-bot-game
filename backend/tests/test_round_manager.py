@@ -6,15 +6,15 @@ import pytest
 
 from src.db.models import Player
 from src.services.round_manager import (
+    ALPHABET,
+    ANSWER_REGEX,
     CATEGORIES,
     NUM_STOP_BUTTONS,
     ROUND_DURATION,
     TOTAL_ROUNDS,
-    ALPHABET,
-    RoundState,
     RoundManager,
+    RoundState,
     parse_answers,
-    ANSWER_REGEX,
 )
 
 
@@ -340,9 +340,7 @@ class TestPressStop:
             callback=callback,
             bot=AsyncMock(),
         )
-        callback.answer.assert_awaited_with(
-            "❌ Esta ronda ya terminó.", show_alert=False
-        )
+        callback.answer.assert_awaited_with("❌ Esta ronda ya terminó.", show_alert=False)
 
     @pytest.mark.asyncio
     async def test_press_stop_not_first_completer(self, fresh_round_manager):
@@ -490,6 +488,49 @@ class TestParseAnswersFunction:
         assert result.get("Nombre") == "Juan"
         assert result.get("Color") == "rojo"
         assert result.get("País") == "Bogotá"
+
+
+class TestParseAnswersEdgeCases:
+    def test_empty_input(self):
+        assert parse_answers("", CATEGORIES) == {}
+
+    def test_only_whitespace(self):
+        assert parse_answers("   \n  \t  ", CATEGORIES) == {}
+
+    def test_no_colon(self):
+        result = parse_answers("Nombre Ana\nColor Rojo", CATEGORIES)
+        assert result == {}
+
+    def test_malformed_category(self):
+        result = parse_answers(": valor\nNombre: Ana", CATEGORIES)
+        assert "Nombre" in result
+        assert result["Nombre"] == "Ana"
+
+    def test_extra_whitespace_in_value(self):
+        result = parse_answers("Nombre:   Juan   ", CATEGORIES)
+        assert result.get("Nombre") == "Juan"
+
+    def test_multiline_value_not_allowed(self):
+        text = "Nombre: Juan\n  Perez\nColor: Rojo"
+        result = parse_answers(text, CATEGORIES)
+        assert result.get("Nombre") == "Juan"
+        assert "Color" in result
+
+    def test_repeated_category_overwrites(self):
+        text = "Nombre: Ana\nNombre: Luis"
+        result = parse_answers(text, CATEGORIES)
+        assert result.get("Nombre") == "Luis"
+
+    def test_accent_insensitive_category(self):
+        result = parse_answers("pais: Argentina", CATEGORIES)
+        assert "País" in result
+
+    def test_unknown_categories_ignored(self):
+        text = "Nombre: Juan\nFakeCategory: valor\nColor: Rojo"
+        result = parse_answers(text, CATEGORIES)
+        assert "Nombre" in result
+        assert "Color" in result
+        assert "FakeCategory" not in result
 
 
 class TestRoundManagerConstants:

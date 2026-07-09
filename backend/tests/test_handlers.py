@@ -5,7 +5,6 @@ from aiogram.types import Chat, ChatMemberUpdated
 
 from src.db.models import Player
 
-
 # ── cmd_stop ────────────────────────────────────────────────────────────────
 
 
@@ -62,9 +61,7 @@ async def test_cmd_stop_group_reports_error(mock_lm):
     player = MagicMock(spec=Player)
     bot = AsyncMock()
 
-    mock_lm.create_lobby = AsyncMock(
-        return_value="⚠️ Ya hay una sala abierta."
-    )
+    mock_lm.create_lobby = AsyncMock(return_value="⚠️ Ya hay una sala abierta.")
 
     await cmd_stop(message, player, bot)
     message.answer.assert_awaited_once_with("⚠️ Ya hay una sala abierta.")
@@ -107,9 +104,7 @@ async def test_cmd_cancel_group_cancels(mock_lm):
     mock_lm.cancel_game = AsyncMock(return_value="✅ Partida cancelada.")
 
     await cmd_cancel(message, player, bot)
-    mock_lm.cancel_game.assert_awaited_once_with(
-        group_chat_id=-100789, player=player, bot=bot
-    )
+    mock_lm.cancel_game.assert_awaited_once_with(group_chat_id=-100789, player=player, bot=bot)
     message.answer.assert_awaited_once_with("✅ Partida cancelada.")
 
 
@@ -158,8 +153,9 @@ async def test_callback_start_calls_manager(mock_lm):
 
 @pytest.mark.asyncio
 async def test_cmd_start_responds_with_welcome():
-    from src.handlers.start import cmd_start
     from unittest.mock import patch
+
+    from src.handlers.start import cmd_start
 
     message = AsyncMock()
     message.answer.return_value = AsyncMock()
@@ -178,8 +174,9 @@ async def test_cmd_start_responds_with_welcome():
 
 @pytest.mark.asyncio
 async def test_cmd_help_responds():
-    from src.handlers.start import cmd_help
     from unittest.mock import patch
+
+    from src.handlers.start import cmd_help
 
     message = AsyncMock()
     message.answer.return_value = AsyncMock()
@@ -212,8 +209,7 @@ async def test_bot_added_to_group_sends_welcome():
 
     bot.send_message.assert_awaited_once_with(
         -100123,
-        "¡Gracias por añadirme a <b>Test Group</b>! 🎉\n\n"
-        "Escribe /stop para comenzar una partida.",
+        "¡Gracias por añadirme a <b>Test Group</b>! 🎉\n\nEscribe /stop para comenzar una partida.",
     )
 
 

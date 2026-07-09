@@ -1,4 +1,4 @@
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,7 @@ class BaseRepository(Generic[ModelType]):
         self.model = model
         self.session = session
 
-    async def get(self, id: int) -> Optional[ModelType]:
+    async def get(self, id: int) -> ModelType | None:
         return await self.session.get(self.model, id)
 
     async def get_all(self, **filters: Any) -> list[ModelType]:
@@ -30,16 +30,12 @@ class BaseRepository(Generic[ModelType]):
         await self.session.refresh(instance)
         return instance
 
-    async def update(self, id: int, **kwargs: Any) -> Optional[ModelType]:
-        await self.session.execute(
-            update(self.model).where(self.model.id == id).values(**kwargs)
-        )
+    async def update(self, id: int, **kwargs: Any) -> ModelType | None:
+        await self.session.execute(update(self.model).where(self.model.id == id).values(**kwargs))
         await self.session.commit()
         return await self.get(id)
 
     async def delete(self, id: int) -> bool:
-        result = await self.session.execute(
-            delete(self.model).where(self.model.id == id)
-        )
+        result = await self.session.execute(delete(self.model).where(self.model.id == id))
         await self.session.commit()
         return result.rowcount > 0

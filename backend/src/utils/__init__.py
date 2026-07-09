@@ -1,4 +1,5 @@
 """Utilidades generales."""
+
 import asyncio
 import logging
 
@@ -44,7 +45,7 @@ def format_score_table(
     lines = [f"<b>📊 {title}</b>", ""]
     max_score = max((s[1] for s in scores), default=1)
     for i, (name, score) in enumerate(scores):
-        medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
+        medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i + 1}."
         bar = progress_bar(score, max_score)
         lines.append(f"{medal} <b>{name}</b>  {bar}")
         lines.append(f"     {score} pts")

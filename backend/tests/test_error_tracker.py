@@ -1,14 +1,14 @@
 import asyncio
 import sys
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.db.models import ErrorLog
-from src.services.error_tracker import ErrorTracker, _get_solution, KNOWN_SOLUTIONS
+import pytest
 
+from src.db.models import ErrorLog
+from src.services.error_tracker import KNOWN_SOLUTIONS, ErrorTracker, _get_solution
 
 # Get the actual module object (not shadowed by instance in __init__.py)
-_et_module = sys.modules['src.services.error_tracker']
+_et_module = sys.modules["src.services.error_tracker"]
 
 
 class TestGetSolution:
@@ -41,7 +41,7 @@ class TestGetSolution:
 class TestErrorTrackerCapture:
     @pytest.mark.asyncio
     async def test_capture_exception_success(self):
-        with patch.object(_et_module, 'async_session_factory') as mock_session_factory:
+        with patch.object(_et_module, "async_session_factory") as mock_session_factory:
             mock_session = AsyncMock()
             mock_session.add = MagicMock()
 
@@ -70,7 +70,7 @@ class TestErrorTrackerCapture:
 
     @pytest.mark.asyncio
     async def test_capture_db_failure_does_not_crash(self):
-        with patch.object(_et_module, 'async_session_factory') as mock_session_factory:
+        with patch.object(_et_module, "async_session_factory") as mock_session_factory:
             mock_session = AsyncMock()
             mock_session.add = MagicMock()
             mock_session.commit = AsyncMock(side_effect=Exception("DB fail"))
@@ -132,7 +132,7 @@ class TestErrorTrackerTrackErrors:
 class TestErrorTrackerGenerateReport:
     @pytest.mark.asyncio
     async def test_report_format_when_no_errors(self):
-        with patch.object(_et_module, 'async_session_factory') as mock_session_factory:
+        with patch.object(_et_module, "async_session_factory") as mock_session_factory:
             mock_session = AsyncMock()
             mock_session.add = MagicMock()
             mock_session_factory.return_value.__aenter__.return_value = mock_session
@@ -143,7 +143,7 @@ class TestErrorTrackerGenerateReport:
             mock_repo.get_most_frequent_exception = AsyncMock(return_value=[])
             mock_repo.get_recent = AsyncMock(return_value=[])
 
-            with patch.object(_et_module, 'ErrorLogRepository', return_value=mock_repo):
+            with patch.object(_et_module, "ErrorLogRepository", return_value=mock_repo):
                 tracker = ErrorTracker()
                 report = await tracker.generate_report()
                 assert "DIAGNÓSTICO" in report

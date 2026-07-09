@@ -1,4 +1,3 @@
-from typing import Optional
 
 from sqlalchemy import select
 
@@ -9,7 +8,7 @@ class GroupConfigRepository:
     def __init__(self, session):
         self.session = session
 
-    async def get_by_group(self, group_chat_id: int) -> Optional[GroupConfig]:
+    async def get_by_group(self, group_chat_id: int) -> GroupConfig | None:
         stmt = select(GroupConfig).where(GroupConfig.group_chat_id == group_chat_id)
         result = await self.session.execute(stmt)
 

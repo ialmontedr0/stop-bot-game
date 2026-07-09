@@ -1,4 +1,5 @@
 import pytest
+
 from src.services.xp_service import XPService, _calculate_level, _get_xp_for_next_level
 
 
@@ -57,6 +58,7 @@ class TestUpdateStreak:
             obj.current_streak = 0
             obj.max_streak = 0
             obj.last_played_date = None
+
         mock_session.refresh = AsyncMock(side_effect=refresh_side)
 
         # Second call outside _get_or_create for commit
@@ -72,8 +74,8 @@ class TestUpdateStreak:
 
     @pytest.mark.asyncio
     async def test_consecutive_day_increments(self):
-        from datetime import date, timedelta
         import sys
+        from datetime import date, timedelta
         from unittest.mock import AsyncMock, MagicMock, patch
 
         real_date = date.today()
@@ -101,8 +103,8 @@ class TestUpdateStreak:
 
     @pytest.mark.asyncio
     async def test_missed_day_resets(self):
-        from datetime import date, timedelta
         import sys
+        from datetime import date, timedelta
         from unittest.mock import AsyncMock, MagicMock, patch
 
         two_days_ago = date.today() - timedelta(days=2)
@@ -141,6 +143,7 @@ class TestAwardGameXp:
         self._patches.append(p1)
 
         import src.services.event_service as es_mod
+
         p_event = patch.object(
             es_mod.event_service, "get_active_multiplier", AsyncMock(return_value=1.0)
         )
@@ -158,6 +161,7 @@ class TestAwardGameXp:
 
         def execute_side(*args, **kwargs):
             from unittest.mock import MagicMock
+
             r = MagicMock()
             r.scalar_one_or_none.return_value = None
             return r
@@ -168,7 +172,7 @@ class TestAwardGameXp:
         mock_session.flush = AsyncMock()
 
         def refresh_side(obj):
-            if hasattr(obj, 'player_id'):
+            if hasattr(obj, "player_id"):
                 obj.current_streak = 0
                 obj.max_streak = 0
                 obj.last_played_date = None

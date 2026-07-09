@@ -442,47 +442,8 @@ ESTADO DE LA FASE: COMPLETADA (ver phase6-guide.md)
 **Entregable:** Bot visualmente moderno con imágenes, animaciones y botones ricos.
 
 
-ESTADO DE LA FASE: 
+ESTADO DE LA FASE: COMPLETADA (ver phase7-guide.md)
 ---
-
-Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
-
-Fase 7 — Experiencia moderna: animaciones, UI, imágenes
-
-**Objetivo:** Hacer el bot visualmente atractivo.
-
-### Tareas
-
-- [ ] 7.1 **Mensajes animados:**
-  - Countdown: bot edita el mensaje cada segundo (`"⏰ 5..."`, `"4..."`, etc.).
-  - Lobby: puntos suspensivos animados (`"Esperando jugadores"` → `"."` → `".."` → `"..."`).
-  - Usar `asyncio.sleep` + `edit_message_text`.
-
-- [ ] 7.2 **Imágenes generadas:**
-  - Logo de ronda con letra grande (Pillow): fondo degradado, letra blanca.
-  - Podio final: imagen con 🥇🥈🥉 y nombres.
-  - Cartas de logros al desbloquear.
-  - Tabla semanal como imagen.
-
-- [ ] 7.3 **Botones inline:**
-  - Con emojis y estilos limpios.
-  - `InlineKeyboardButton` con `callback_data` estructurada.
-  - Paginación en menús largos (ej. selección de letra → 2 filas de 13).
-
-- [ ] 7.4 **Efectos visuales:**
-  - Spoiler en respuestas hasta el Stop (`parse_mode="HTML"` con `<tg-spoiler>`).
-  - Stickers temporales que enviara bot.
-
-- [ ] 7.5 **Formato de mensajes:**
-  - Usar `HTML` parse mode con negritas, itálicas, monoespaciado.
-  - Tablas de puntuación con emojis de barras de progreso (`🟩🟩🟩⬜⬜`).
-
-- [ ] 7.6 **Formato de comandos /help, /start, /profile, /rank, /leaderboard, /stats, /stop:**
-  - Formatear las respuestas del bot a estos comandos con incluyendo imagenes, texto formateado, animaciones (si se soporta) y otras sugerencias de tu parte.
-
-**Entregable:** Bot visualmente moderno con imágenes, animaciones y botones ricos.
-
-Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Fase 8 — Calidad, testing, despliegue
 
@@ -524,7 +485,12 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
 
 **Entregable:** Pipeline CI/CD, tests, monitoreo, deploy.
 
+
+ESTADO DE LA FASE: EN GUIA (ver phase8-guide.md)
+
 ---
+
+
 
 ## Fase 9 — Extensiones post-MVP
 
@@ -548,7 +514,16 @@ Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las
 
 **Entregable:** Features opcionales, backlog priorizado.
 
+
+ESTADO DE LA FASE:
+
 ---
+
+Ahora desarrollemos la siguiente fase completa y avanzada del proyecto por favor:
+
+
+
+Proporcioname toda la informacion, comandos, datos, codigo, detalles y todas las instrucciones y todo el codigo necesario para esta implementacion, no hagas ninguna implementacion ni ningun cambio tu, dame el codigo y las instrucciones a mi que yo lo hago por favor. Nota: recuerda siempre leer el phases.md y definitions.md para que te retroalimentes cuando necesites informacion de cualquier cosa. Y escribir cualquier informacion en el archivo correspondiente a la fase en desarrollo actual por ejemplo phase0-guide.md. No omitas nada, piensa en todo y selecciona las mejores opciones, arquitecturas, tecnologias, todo que me sea gratis xfa :).
 
 ## Resumen de tecnologías
 

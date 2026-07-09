@@ -3,7 +3,7 @@ import re
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from src.db.models import Answer
 
@@ -34,7 +34,7 @@ def _normalize(text: str) -> str:
     return text
 
 
-def _is_valid_word(text: str, letter: Optional[str] = None) -> bool:
+def _is_valid_word(text: str, letter: str | None = None) -> bool:
     if not text or not text.strip():
         return False
     stripped = text.strip()
@@ -64,8 +64,8 @@ def _group_by_category(
 def _determine_answer_scores(
     player_answers: list[tuple[int, Answer]],
     spell_corrector: Optional["SpellCorrector"] = None,
-    letter: Optional[str] = None,
-    category: Optional[str] = None,
+    letter: str | None = None,
+    category: str | None = None,
 ) -> dict[int, tuple[bool, int]]:
     if spell_corrector is not None:
         return _determine_answer_scores_fuzzy(
@@ -110,8 +110,8 @@ def _determine_answer_scores(
 def _determine_answer_scores_fuzzy(
     player_answers: list[tuple[int, Answer]],
     spell_corrector: "SpellCorrector",
-    letter: Optional[str] = None,
-    category: Optional[str] = None,
+    letter: str | None = None,
+    category: str | None = None,
 ) -> dict[int, tuple[bool, int]]:
     all_pids = {pid for pid, _ in player_answers}
 
@@ -139,7 +139,7 @@ def _determine_answer_scores_fuzzy(
                 invalid_pids.add(pid)
 
         if not valid_answers:
-            return {pid: (False, 0) for pid in all_pids}
+            return dict.fromkeys(all_pids, (False, 0))
 
         clusters = spell_corrector.cluster_answers(valid_answers)
         result: dict[int, tuple[bool, int]] = {}
@@ -213,9 +213,9 @@ class ScoreEngine:
         self,
         answers_by_player: dict[int, list[Answer]],
         num_categories: int,
-        first_completer_id: Optional[int] = None,
+        first_completer_id: int | None = None,
         spell_corrector: Optional["SpellCorrector"] = None,
-        letter: Optional[str] = None,
+        letter: str | None = None,
     ) -> tuple[dict[int, int], dict[int, list[dict]]]:
         totals: dict[int, int] = defaultdict(int)
         details: dict[int, list[dict]] = defaultdict(list)
@@ -247,9 +247,7 @@ class ScoreEngine:
                     ):
                         norm = spell_corrector.normalize(ans.raw_text)
                         cat_norm = spell_corrector._normalize_category(canonical_cat)
-                        source = spell_corrector.get_validation_source(
-                            f"{cat_norm}:{norm}"
-                        )
+                        source = spell_corrector.get_validation_source(f"{cat_norm}:{norm}")
                         detail_entry["validation_source"] = source
                     details[pid].append(detail_entry)
 
@@ -283,5 +281,5 @@ class ScoreEngine:
         return 0
 
     @staticmethod
-    def is_answer_valid(raw_text: str, letter: Optional[str] = None) -> bool:
+    def is_answer_valid(raw_text: str, letter: str | None = None) -> bool:
         return _is_valid_word(raw_text, letter=letter)

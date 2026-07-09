@@ -1,7 +1,6 @@
 import logging
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +17,12 @@ class Settings(BaseSettings):
 
     # === Spell correction ===
     spell_mode: str = "local"  # local | ai | hybrid
-    spell_api_key: Optional[str] = None
-    spell_api_url: Optional[str] = None  # Ej: https://api.openai.com/v1
+    spell_api_key: str | None = None
+    spell_api_url: str | None = None  # Ej: https://api.openai.com/v1
     spell_api_limit: int = 20  # Max llamadas API por ronda
     spell_fuzzy_threshold: int = 75  # 0-100 umbral fuzzy match
     spell_ai_provider: str = "openai"  # openai | gemini
-    spell_ai_model: Optional[str] = None  # auto segun provider si None
+    spell_ai_model: str | None = None  # auto segun provider si None
 
     def model_post_init(self, __context) -> None:
         if self.spell_mode in ("ai", "hybrid") and not self.spell_api_key:
