@@ -12,6 +12,7 @@ _BG_DIR = os.path.join(_ASSETS_DIR, "backgrounds")
 _FONT_DIR = os.path.join(_ASSETS_DIR, "fonts")
 _START_DIR = os.path.join(_ASSETS_DIR, "start")
 _HELP_DIR = os.path.join(_ASSETS_DIR, "help")
+_PLACEHOLDER_PATH = os.path.join(_ASSETS_DIR, "leaderboard", "profile_placeholder.png")
 
 WHITE = (255, 255, 255, 255)
 BLACK = (0, 0, 0, 255)
@@ -50,6 +51,45 @@ def _center_text(
     draw.text((x, y), text, font=font, fill=color)
 
 
+def _load_profile_photo(image_data: Optional[bytes], size: int = 60) -> Image.Image:
+    if image_data:
+        try:
+            img = Image.open(BytesIO(image_data)).convert("RGBA")
+            return img.resize((size, size), Image.LANCZOS)
+        except Exception:
+            pass
+    # Placeholder por defecto
+    try:
+        placeholder = Image.open(_PLACEHOLDER_PATH).convert("RGBA")
+        return placeholder.resize((size, size), Image.LANCZOS)
+    except (IOError, OSError):
+        # Fallback: circulo gris
+        img = Image.new("RGBA", (size, size), (80, 80, 100, 255))
+        return img
+
+
+def _paste_profile_photo(
+    img: Image.Image, photo: Image.Image, x: int, y: int, size: int = 60
+) -> None:
+    """Recorta el photo en circular y pega la imagen en img en (x, y)
+
+    Args:
+        img (Image.Image): _description_
+        photo (Image.Image): _description_
+        x (int): _description_
+        y (int): _description_
+        size (int, optional): _description_. Defaults to 60.
+    """
+    # Crear mascara circular
+    photo_resized = photo.resize((size, size), Image.LANCZOS)
+    mask = Image.new("L", (size, size), 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.ellipse([0, 0, size, size], fill=255)
+    output = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    output.paste(photo_resized, (0, 0), mask)
+    img.paste(output, (x, y), output)
+
+
 def generate_round_letter_image(
     letter: str,
     round_number: int,
@@ -84,23 +124,24 @@ def generate_round_letter_image(
 def generate_podium_image(
     winners: list[tuple[str, int]],
     game_rounds: int = 5,
+    profile_photos: Optional[list[Optional[Image.Image]]] = None,
 ) -> Optional[bytes]:
     try:
         img = _load_bg("podium_bg.png", (400, 300))
         draw = ImageDraw.Draw(img)
 
-        font_title = _get_font(48)
-        _center_text(draw, "PODIO FINAL", font_title, 30, GOLD)
+        font_title = _get_font(22)
+        _center_text(draw, "PODIO FINAL", font_title, 12, GOLD)
 
-        font_sub = _get_font(12)
+        font_sub = _get_font(10)
         rondas_text = (
             "1 ronda jugada" if game_rounds == 1 else f"{game_rounds} rondas jugadas"
         )
-        _center_text(draw, rondas_text, font_sub, 42, (200, 200, 200, 255))
+        _center_text(draw, rondas_text, font_sub, 28, (180, 180, 190, 255))
 
         if not winners:
             _center_text(
-                draw, "Sin puntuaciones", _get_font(36), 280, (255, 100, 100, 255)
+                draw, "Sin puntuaciones", _get_font(18), 140, (255, 100, 100, 255)
             )
             buf = BytesIO()
             img.save(buf, format="PNG")
@@ -109,26 +150,32 @@ def generate_podium_image(
 
         medals = ["1", "2", "3"]
         medal_colors = [GOLD, SILVER, BRONZE]
-        font_name = _get_font(36)
-        font_score = _get_font(28)
 
-        start_y = 160
         for i, (name, score) in enumerate(winners[:3]):
-            y = start_y + i * 120
+            y = 52 + i * 78
 
-            font_medal = _get_font(48)
-            _center_text(draw, medals[i], font_medal, y, medal_colors[i])
+            # Foto de perfil circular a la izquierda
+            if profile_photos and i < len(profile_photos) and profile_photos[i]:
+                _paste_profile_photo(img, profile_photos[i], 15, y, 42)
 
-            _center_text(draw, name, font_name, y + 55, WHITE)
+            # Medalla
+            font_medal = _get_font(20)
+            _center_text(draw, medals[i], font_medal, y + 5, medal_colors[i])
 
-            _center_text(draw, f"{score} pts", font_score, y + 90, medal_colors[i])
+            # Nombre
+            font_name = _get_font(13)
+            _center_text(draw, name, font_name, y + 32, WHITE)
+
+            # Puntaje
+            font_score = _get_font(11)
+            _center_text(draw, f"{score} pts", font_score, y + 52, medal_colors[i])
 
         if len(winners) > 3:
-            font_rest = _get_font(22)
+            font_rest = _get_font(9)
             rest_text = " | ".join(
-                f"{i + 1}. {n}: {s}pts" for i, (n, s) in enumerate(winners[3:])
+                f"{i + 1}. {n}: {s}" for i, (n, s) in enumerate(winners[3:])
             )
-            _center_text(draw, rest_text, font_rest, 530, (150, 150, 150, 255))
+            _center_text(draw, rest_text, font_rest, 275, (150, 150, 150, 255))
 
         buf = BytesIO()
         img.save(buf, format="PNG")
@@ -142,6 +189,7 @@ def generate_podium_image(
 def generate_leaderboard_image(
     entries: list[tuple[int, str, int]],
     week_label: str = "Esta semana",
+    profile_photos: Optional[dict[int, Image.Image]] = None,
 ) -> Optional[bytes]:
     try:
         img = Image.new("RGBA", (600, 800), (20, 20, 40, 255))
@@ -174,6 +222,10 @@ def generate_leaderboard_image(
             text_w = bbox[2] - bbox[0]
             x = (600 - text_w) // 2
             draw.text((x, y), display, font=font_entry, fill=WHITE)
+
+            # Foto de perfil para top 3
+            if profile_photos and rank in profile_photos and profile_photos[rank]:
+                _paste_profile_photo(img, profile_photos[rank], 15, y - 5, 40)
 
             score_text = f"{score} pts"
             bbox2 = draw.textbbox((0, 0), score_text, font=font_score)
@@ -292,14 +344,14 @@ def generate_welcome_image() -> Optional[bytes]:
 
         font_subtitle = _get_font(16)
         _center_text(draw, "Pare!", font_subtitle, 80, (200, 200, 255, 255))
-        
+
         # Cargar y sobreponer logo PNG centrado
         logo_path = os.path.join(_START_DIR, "stop_it.png")
         try:
             logo = Image.open(logo_path).convert("RGBA")
             logo = logo.resize((160, 160), Image.LANCZOS)
             logo_x = (400 - logo.width) // 2
-            logo_y = (300 - logo.height) // 2 + 10 # +10 para ajuste vertical
+            logo_y = (300 - logo.height) // 2 + 10  # +10 para ajuste vertical
             img.paste(logo, (logo_x, logo_y), logo)
         except (IOError, OSError):
             logger.warning("Logo no encontrado en %s, omitiendo", logo_path)
@@ -323,15 +375,15 @@ def generate_help_image() -> Optional[bytes]:
     try:
         img = Image.new("RGBA", (400, 300), (25, 25, 50, 255))
         draw = ImageDraw.Draw(img)
-        
+
         borde_color = (100, 100, 200, 255)
         draw.rounded_rectangle(
             [5, 5, 395, 295], radius=20, outline=borde_color, width=4
         )
-        
+
         font_title = _get_font(24)
         _center_text(draw, "COMO JUGAR?", font_title, 25, (255, 215, 0, 255))
-        
+
         # Cargar y sobreponer help.png centrado
         help_path = os.path.join(_HELP_DIR, "help.png")
         try:
@@ -342,19 +394,19 @@ def generate_help_image() -> Optional[bytes]:
             img.paste(help_img, (help_x, help_y), help_img)
         except (IOError, OSError):
             logger.warning("Help image no encontrada en %s, omitiendo", help_path)
-            
+
         font_steps = _get_font(13)
         steps_y = 220
         pasos = [
             "1. /stop en grupo",
             "2. Espera jugadores (max. 10)",
             "3. Completa las categorias",
-            "4. Se el primero en terminar"
+            "4. Se el primero en terminar",
         ]
         for paso in pasos:
             _center_text(draw, paso, font_steps, steps_y, (200, 200, 220, 255))
             steps_y += 18
-            
+
         buf = BytesIO()
         img.save(buf, format="PNG")
         buf.seek(0)

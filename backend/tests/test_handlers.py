@@ -164,7 +164,7 @@ async def test_cmd_start_responds_with_welcome():
     message = AsyncMock()
     message.answer.return_value = AsyncMock()
 
-    with patch("src.image_generator.generate_round_letter_image", return_value=None):
+    with patch("src.image_generator.generate_welcome_image", return_value=None):
         await cmd_start(message)
 
     message.answer.assert_awaited_once()
@@ -179,11 +179,13 @@ async def test_cmd_start_responds_with_welcome():
 @pytest.mark.asyncio
 async def test_cmd_help_responds():
     from src.handlers.start import cmd_help
+    from unittest.mock import patch
 
     message = AsyncMock()
     message.answer.return_value = AsyncMock()
 
-    await cmd_help(message)
+    with patch("src.image_generator.generate_help_image", return_value=None):
+        await cmd_help(message)
 
     message.answer.assert_awaited_once()
     args, _ = message.answer.await_args
