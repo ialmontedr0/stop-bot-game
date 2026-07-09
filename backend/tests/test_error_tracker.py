@@ -2,7 +2,6 @@ import asyncio
 import sys
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
 
 from src.db.models import ErrorLog
 from src.services.error_tracker import ErrorTracker, _get_solution, KNOWN_SOLUTIONS

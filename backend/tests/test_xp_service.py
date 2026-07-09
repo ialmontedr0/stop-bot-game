@@ -1,5 +1,5 @@
 import pytest
-from src.services.xp_service import XPService, _calculate_level, _get_xp_for_next_level, LEVEL_TABLE
+from src.services.xp_service import XPService, _calculate_level, _get_xp_for_next_level
 
 
 class TestCalculateLevel:
@@ -54,7 +54,6 @@ class TestUpdateStreak:
         mock_session.flush = AsyncMock()
 
         def refresh_side(obj):
-            from datetime import date
             obj.current_streak = 0
             obj.max_streak = 0
             obj.last_played_date = None
@@ -133,7 +132,6 @@ class TestAwardGameXp:
     def mock_db(self):
         import sys
         from unittest.mock import AsyncMock, MagicMock, patch
-        from datetime import date
 
         xp_mod = sys.modules["src.services.xp_service"]
 

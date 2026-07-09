@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from aiogram import Bot, Router, F
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 

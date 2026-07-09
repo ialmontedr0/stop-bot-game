@@ -80,6 +80,7 @@ class RoundState:
     inter_round_message_id: Optional[int] = None
     inter_round_timeout_task: Optional[asyncio.Task] = None
     cancelled: bool = False
+    validation_mode: str = "local"
 
 
 class RoundManager:
@@ -121,6 +122,7 @@ class RoundManager:
         round_time: int = 60,
         categories: Optional[list[str]] = None,
         include_n: bool = False,
+        validation_mode: str = "local",
     ) -> None:
         # Usar categorias de GroupConfig (o las default)
         effective_categories = categories or CATEGORIES
@@ -139,7 +141,6 @@ class RoundManager:
                     category_count=len(effective_categories),
                 )
                 if img_bytes:
-                    from io import BytesIO
                     from aiogram.types import BufferedInputFile
 
                     photo = BufferedInputFile(
@@ -171,6 +172,7 @@ class RoundManager:
             host_telegram_id=host_telegram_id or 0,
             round_time=round_time,
             include_n=include_n,
+            validation_mode=validation_mode,
         )
 
         async with async_session_factory() as session:
@@ -179,10 +181,20 @@ class RoundManager:
                 game_id=game_id, round_number=round_number, letter=letter
             )
 
-        state.timer_task = asyncio.create_task(self._round_timer(state, bot))
+        # Cancelar timer anterior si existe (evita timers huérfanos)
+        old_state = self._rounds.get(game_id)
+        if old_state:
+            if old_state.timer_task and not old_state.timer_task.done():
+                old_state.timer_task.cancel()
+            if old_state.letter_timeout_task and not old_state.letter_timeout_task.done():
+                old_state.letter_timeout_task.cancel()
+            if old_state.inter_round_timeout_task and not old_state.inter_round_timeout_task.done():
+                old_state.inter_round_timeout_task.cancel()
+
         self._rounds[game_id] = state
         self._rounds_by_group[group_chat_id] = game_id
         self._letter_pending.pop(game_id, None)
+        state.timer_task = asyncio.create_task(self._round_timer(state, bot))
         logger.info(
             "Ronda iniciada",
             extra=dict(
@@ -215,10 +227,10 @@ class RoundManager:
         from src.services.spell_corrector import get_corrector
 
         corrector = get_corrector()
-        if corrector.mode in ("ai", "hybrid"):
+        if state.validation_mode in ("ai", "hybrid"):
             for slot, raw_text in list(parsed.items()):
                 if raw_text and raw_text.strip():
-                    is_valid = await corrector.validate(raw_text, slot)
+                    is_valid = await corrector.validate(raw_text, slot, mode=state.validation_mode)
                     if not is_valid:
                         parsed[slot] = ""
                         logger.info(
@@ -631,18 +643,34 @@ class RoundManager:
 
             next_number = state.round_number + 1
 
-        await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
+            await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
 
-        # Eliminar el teclado de letras
-        if state.letter_message_id:
-            try:
-                await bot.delete_message(
-                    chat_id=state.letter_message_chat_id,
-                    message_id=state.letter_message_id,
-                )
-            except TelegramBadRequest:
-                pass
+            # Eliminar el teclado de letras
+            if state.letter_message_id:
+                try:
+                    await bot.delete_message(
+                        chat_id=state.letter_message_chat_id,
+                        message_id=state.letter_message_id,
+                    )
+                except TelegramBadRequest:
+                    pass
 
+            await self.start_round(
+                game_id=game_id,
+                group_chat_id=state.group_chat_id,
+                round_number=next_number,
+                letter=letter,
+                total_players=state.total_players,
+                total_rounds=state.total_rounds,
+                player_names=state.player_names,
+                bot=bot,
+                host_telegram_id=state.host_telegram_id,
+                round_time=state.round_time,
+                categories=state.categories,
+                include_n=state.include_n,
+            )
+
+        # Countdown fuera del lock (solo envio de mensajes)
         countdown = await bot.send_message(
             state.group_chat_id,
             f"<b>Letra: {letter}</b>\n⏱ Siguiente ronda en 5 segundos...",
@@ -652,21 +680,6 @@ class RoundManager:
             await countdown.delete()
         except TelegramBadRequest:
             pass
-
-        await self.start_round(
-            game_id=game_id,
-            group_chat_id=state.group_chat_id,
-            round_number=next_number,
-            letter=letter,
-            total_players=state.total_players,
-            total_rounds=state.total_rounds,
-            player_names=state.player_names,
-            bot=bot,
-            host_telegram_id=state.host_telegram_id,
-            round_time=state.round_time,
-            categories=state.categories,
-            include_n=state.include_n,
-        )
 
     async def _start_next_round_with_letter(
         self,
@@ -816,7 +829,7 @@ class RoundManager:
         self._letter_pending.pop(state.game_id, None)
         self._rounds_by_group.pop(state.group_chat_id, None)
 
-    async def _check_all_submitted(self, state: RoundState) -> None:
+    async def _check_all_submitted(self, state: RoundState) -> bool:
         return len(state.submitted_player_ids) >= state.total_players
 
     async def _send_stop_message(self, state: RoundState, bot: Bot) -> None:
@@ -1104,15 +1117,8 @@ class RoundManager:
                 except asyncio.CancelledError:
                     return
 
-            # Tiempo agotado - pop del state bajo lock, sends fuera
-            async with self._lock_for(state.game_id):
-                _state = self._rounds.pop(state.game_id, None)
-                if _state:
-                    if _state.timer_task and not _state.timer_task.done():
-                        _state.timer_task.cancel()
-                    self._rounds_by_group.pop(_state.group_chat_id, None)
-            if _state:
-                await self._do_close_round_telegram(_state, "timeout", bot)
+            # Tiempo agotado — delegar a _close_round para evitar duplicación
+            await self._close_round(state.game_id, "timeout", bot)
 
         except asyncio.CancelledError:
             pass

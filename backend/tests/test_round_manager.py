@@ -28,6 +28,7 @@ def mock_db():
         mock_scalars.all.return_value = []
         mock_result.scalars.return_value = mock_scalars
         mock_result.one_or_none.return_value = None
+        mock_result.scalar_one_or_none.return_value = None
         mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()

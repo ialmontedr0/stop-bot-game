@@ -2,7 +2,7 @@ import logging
 import re
 import unicodedata
 from collections import defaultdict
-
+from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 
 from src.db.models import Answer
@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 
 UNIQUE_POINTS = 50
 FIRST_COMPLETER_BONUS = 10
+
+
+@dataclass
+class _AnswerOverride:
+    raw_text: str
+    word_slot: str
+    player_id: int
+    is_correct: bool
+    score: int
+    id: int
 
 
 def _normalize(text: str) -> str:
@@ -116,17 +126,6 @@ def _determine_answer_scores_fuzzy(
                 continue
             is_valid, corrected = spell_corrector.validate_against_list(txt, category)
             if is_valid:
-                from dataclasses import dataclass
-
-                @dataclass
-                class _AnswerOverride:
-                    raw_text: str
-                    word_slot: str
-                    player_id: int
-                    is_correct: bool
-                    score: int
-                    id: int
-
                 corrected_ans = _AnswerOverride(
                     raw_text=corrected,
                     word_slot=ans.word_slot,

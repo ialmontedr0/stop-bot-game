@@ -47,6 +47,7 @@ class LobbyState:
     animation_task: Optional[asyncio.Task] = None
     auto_start_task: Optional[asyncio.Task] = None
     started: bool = False
+    start_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class LobbyManager:
@@ -352,12 +353,13 @@ class LobbyManager:
 
     # --- Iniciar partida -------------------------------------------------------
     async def _do_start(self, state: LobbyState, bot: Bot) -> None:
-        if state.started:
-            logger.warning(
-                "_do_start llamado múltiples veces para game %s", state.game_id
-            )
-            return
-        state.started = True
+        async with state.start_lock:
+            if state.started:
+                logger.warning(
+                    "_do_start llamado múltiples veces para game %s", state.game_id
+                )
+                return
+            state.started = True
         self._cleanup(state)
 
         # --- Leer validation_mode del grupo ----------------
@@ -377,13 +379,6 @@ class LobbyManager:
                 ]
             round_time = group_config.round_time
             include_n = group_config.include_n
-
-        from src.services.spell_corrector import get_corrector
-
-        corrector = get_corrector()
-        # Usar una referencia local al modo — el corrector debe leer mode de cada llamada
-        # Temporal: pasamos el modo como parámetro en start_round / score engine
-        corrector.mode = validation_mode
 
         logger.info(
             "Modo validacion para grupo %s: %s", state.group_chat_id, validation_mode
@@ -456,6 +451,7 @@ class LobbyManager:
             round_time=round_time,
             categories=categories,
             include_n=include_n,
+            validation_mode=validation_mode,
         )
 
     # --- Limpieza --------------------------------------------------------------

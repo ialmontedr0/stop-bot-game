@@ -2,7 +2,6 @@ import asyncio
 import functools
 import logging
 import traceback as tb
-from datetime import datetime, timezone
 from typing import Any, Callable, Optional, TypeVar
 
 from src.db.engine import async_session_factory

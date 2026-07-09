@@ -27,6 +27,7 @@ async def cmd_clear_stats(message: Message, bot: Bot) -> None:
 
     try:
         async with async_session_factory() as session:
+            await session.execute(text("DELETE FROM message_logs"))
             await session.execute(text("DELETE FROM answers"))
             await session.execute(text("DELETE FROM rounds"))
             await session.execute(text("DELETE FROM game_players"))
@@ -34,6 +35,14 @@ async def cmd_clear_stats(message: Message, bot: Bot) -> None:
             await session.execute(text("DELETE FROM weekly_leaderboards"))
             await session.execute(text("DELETE FROM player_xp"))
             await session.execute(text("DELETE FROM streaks"))
+            await session.execute(text("ALTER SEQUENCE message_logs_id_seq RESTART WITH 1"))
+            await session.execute(text("ALTER SEQUENCE answers_id_seq RESTART WITH 1"))
+            await session.execute(text("ALTER SEQUENCE rounds_id_seq RESTART WITH 1"))
+            await session.execute(text("ALTER SEQUENCE game_players_id_seq RESTART WITH 1"))
+            await session.execute(text("ALTER SEQUENCE games_id_seq RESTART WITH 1"))
+            await session.execute(text("ALTER SEQUENCE weekly_leaderboards_id_seq RESTART WITH 1"))
+            await session.execute(text("ALTER SEQUENCE player_xp_id_seq RESTART WITH 1"))
+            await session.execute(text("ALTER SEQUENCE streaks_id_seq RESTART WITH 1"))
             await session.commit()
 
         await status.edit_text(

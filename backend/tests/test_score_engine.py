@@ -1,4 +1,3 @@
-import pytest
 
 from src.db.models import Answer
 from src.services.score_engine import (

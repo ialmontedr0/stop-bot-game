@@ -1,5 +1,3 @@
-import pytest
-from datetime import datetime
 from src.db.models import WordListItem
 from src.db.repositories.word_list_repository import WordListRepository
 

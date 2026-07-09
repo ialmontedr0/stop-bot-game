@@ -1,7 +1,5 @@
 import pytest
-from datetime import datetime, timezone, timedelta
 
-from src.db.models import ErrorLog
 from src.db.repositories.error_log_repository import ErrorLogRepository
 
 

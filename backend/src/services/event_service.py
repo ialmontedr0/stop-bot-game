@@ -25,7 +25,7 @@ class EventService:
             )
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
-            return row or 1.0
+            return row if row is not None else 1.0
 
     @staticmethod
     async def get_active_events() -> list[dict]:

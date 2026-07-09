@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from src.image_generator import generate_round_letter_image, generate_podium_image
 
 

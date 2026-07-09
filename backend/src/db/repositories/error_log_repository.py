@@ -43,7 +43,7 @@ class ErrorLogRepository:
     async def get_unresolved(self, limit: int = 50) -> list[ErrorLog]:
         stmt = (
             select(ErrorLog)
-            .where(ErrorLog.resolved == False)
+            .where(ErrorLog.resolved.is_(False))
             .order_by(ErrorLog.timestamp.desc())
             .limit(limit)
         )
@@ -61,9 +61,10 @@ class ErrorLogRepository:
         return list(result.scalars().all())
 
     async def get_recent(self, minutes: int = 60, limit: int = 50) -> list[ErrorLog]:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes)
         stmt = (
             select(ErrorLog)
-            .where(ErrorLog.timestamp >= func.now() - timedelta(minutes=minutes))
+            .where(ErrorLog.timestamp >= cutoff)
             .order_by(ErrorLog.timestamp.desc())
             .limit(limit)
         )
@@ -79,7 +80,7 @@ class ErrorLogRepository:
         return {row[0]: row[1] for row in result}
 
     async def count_unresolved(self) -> int:
-        stmt = select(func.count(ErrorLog.id)).where(ErrorLog.resolved == False)
+        stmt = select(func.count(ErrorLog.id)).where(ErrorLog.resolved.is_(False))
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
