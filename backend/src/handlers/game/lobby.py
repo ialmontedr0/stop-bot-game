@@ -66,7 +66,7 @@ async def callback_join(callback: CallbackQuery, player: Player, bot: Bot) -> No
             bot=bot,
         )
     except Exception:
-        logger.exception("Error en join_lobby")
+        logger.exception("Error en join_lobby: game_id=%s jugador=%s", game_id, player.telegram_id)
         await callback.answer("❌ Error al unirse a la partida.", show_alert=True)
 
 
@@ -83,5 +83,5 @@ async def callback_start(callback: CallbackQuery, player: Player, bot: Bot) -> N
             game_id=game_id, player=player, callback=callback, bot=bot
         )
     except Exception:
-        logger.exception("Error en start_game")
+        logger.exception("Error en start_game: game_id=%s jugador=%s", game_id, player.telegram_id)
         await callback.answer("❌ Error al iniciar la partida.", show_alert=True)

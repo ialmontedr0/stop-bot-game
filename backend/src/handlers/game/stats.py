@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.utils.markdown import hbold
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, cast, Date
 
 from src.db.engine import async_session_factory
 from src.db.models import Game, GamePlayer, Player
@@ -65,6 +65,30 @@ async def cmd_stats(message: Message, bot: Bot) -> None:
                 .where(Game.finished_at >= week_ago)
             )
             recent_games = (await session.execute(recent_games_stmt)).scalar() or 0
+
+            # Datos diarios para el gráfico de actividad
+            daily_stmt = (
+                select(
+                    cast(Game.finished_at, Date).label("day"),
+                    func.count(Game.id),
+                )
+                .where(Game.group_chat_id == group_chat_id)
+                .where(Game.status == "finished")
+                .where(Game.finished_at >= week_ago)
+                .group_by(cast(Game.finished_at, Date))
+                .order_by(cast(Game.finished_at, Date))
+            )
+            daily_rows = await session.execute(daily_stmt)
+            daily_counts = [(row.day.strftime("%a"), row[1]) for row in daily_rows]
+
+        # Enviar gráfico de actividad
+        if daily_counts:
+            from src.image_generator import generate_activity_chart
+            chart_bytes = generate_activity_chart(daily_counts)
+            if chart_bytes:
+                from aiogram.types import BufferedInputFile
+                photo = BufferedInputFile(chart_bytes, filename="activity.png")
+                await bot.send_photo(chat_id=message.chat.id, photo=photo)
 
         # Formatear texto
         lines = [

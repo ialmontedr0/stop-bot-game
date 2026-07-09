@@ -22,7 +22,6 @@ from src.handlers.game.stats import stats_router
 from src.handlers.game.profile import profile_router
 from src.handlers.game.leaderboard import leaderboard_router
 from src.handlers.admin.events import admin_router
-from src.i18n import get_user_locale
 from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
 from src.services.game_orchestrator import game_orchestrator
@@ -160,14 +159,6 @@ async def main() -> None:
     print(f"[BOOT] Bot autenticado: @{me.username} (ID: {me.id})", flush=True)
 
     dp = Dispatcher(storage=storage)
-
-    @dp.message.outer_middleware
-    async def i18n_middleware(handler, event, data):
-        player = data.get("player")
-        if player:
-            # El locale se puede usar en handlers mediante data["locale"]
-            data["locale"] = get_user_locale(player)
-        return await handler(event, data)
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)

@@ -471,11 +471,14 @@ Fase 7 — Experiencia moderna: animaciones, UI, imágenes
 
 - [ ] 7.4 **Efectos visuales:**
   - Spoiler en respuestas hasta el Stop (`parse_mode="HTML"` con `<tg-spoiler>`).
-  - Stickers temporales del bot (subir stickers personalizados a @BotFather).
+  - Stickers temporales que enviara bot.
 
 - [ ] 7.5 **Formato de mensajes:**
   - Usar `HTML` parse mode con negritas, itálicas, monoespaciado.
   - Tablas de puntuación con emojis de barras de progreso (`🟩🟩🟩⬜⬜`).
+
+- [ ] 7.6 **Formato de comandos /help, /start, /profile, /rank, /leaderboard, /stats, /stop:**
+  - Formatear las respuestas del bot a estos comandos con incluyendo imagenes, texto formateado, animaciones (si se soporta) y otras sugerencias de tu parte.
 
 **Entregable:** Bot visualmente moderno con imágenes, animaciones y botones ricos.
 

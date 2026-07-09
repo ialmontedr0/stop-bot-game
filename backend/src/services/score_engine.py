@@ -2,7 +2,7 @@ import logging
 import re
 import unicodedata
 from collections import defaultdict
-from copy import copy
+
 from typing import Optional, TYPE_CHECKING
 
 from src.db.models import Answer
@@ -28,8 +28,7 @@ def _is_valid_word(text: str, letter: Optional[str] = None) -> bool:
     if not text or not text.strip():
         return False
     stripped = text.strip()
-    if len(stripped) < 1:
-        return False
+
     if not re.match(r"^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-']+$", stripped):
         return False
     if letter:
@@ -117,8 +116,25 @@ def _determine_answer_scores_fuzzy(
                 continue
             is_valid, corrected = spell_corrector.validate_against_list(txt, category)
             if is_valid:
-                corrected_ans = copy(ans)
-                corrected_ans.raw_text = corrected
+                from dataclasses import dataclass
+
+                @dataclass
+                class _AnswerOverride:
+                    raw_text: str
+                    word_slot: str
+                    player_id: int
+                    is_correct: bool
+                    score: int
+                    id: int
+
+                corrected_ans = _AnswerOverride(
+                    raw_text=corrected,
+                    word_slot=ans.word_slot,
+                    player_id=ans.player_id,
+                    is_correct=ans.is_correct,
+                    score=ans.score,
+                    id=ans.id,
+                )
                 valid_answers.append((pid, corrected_ans))
             else:
                 invalid_pids.add(pid)
@@ -158,10 +174,8 @@ def _determine_answer_scores_fuzzy(
         count = len(cluster)
         if count == 1:
             pid = next(iter(cluster))
-            answer = next(
-                (ans for p, ans in player_answers if p == pid), None
-            )
-            txt = (answer.raw_text.strip() if answer else "")
+            answer = next((ans for p, ans in player_answers if p == pid), None)
+            txt = answer.raw_text.strip() if answer else ""
             if txt and _is_valid_word(txt, letter=letter):
                 result[pid] = (True, UNIQUE_POINTS)
             else:
@@ -170,10 +184,8 @@ def _determine_answer_scores_fuzzy(
             # Verificar que al menos una respuesta en el cluster sea valida
             any_valid = False
             for pid in cluster:
-                answer = next(
-                    (ans for p, ans in player_answers if p == pid), None
-                )
-                txt = (answer.raw_text.strip() if answer else "")
+                answer = next((ans for p, ans in player_answers if p == pid), None)
+                txt = answer.raw_text.strip() if answer else ""
                 if txt and _is_valid_word(txt, letter=letter):
                     any_valid = True
                     break
@@ -187,10 +199,8 @@ def _determine_answer_scores_fuzzy(
 
     for pid in all_pids:
         if pid not in result:
-            answer = next(
-                (ans for p, ans in player_answers if p == pid), None
-            )
-            txt = (answer.raw_text.strip() if answer else "")
+            answer = next((ans for p, ans in player_answers if p == pid), None)
+            txt = answer.raw_text.strip() if answer else ""
             if txt and _is_valid_word(txt, letter=letter):
                 result[pid] = (True, UNIQUE_POINTS)
             else:

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -25,7 +25,7 @@ class Player(Base):
     first_name: Mapped[str] = mapped_column(String(128), default="")
     last_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     language_code: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     game_players: Mapped[list["GamePlayer"]] = relationship(
         back_populates="player", cascade="all, delete-orphan"
@@ -53,7 +53,7 @@ class Game(Base):
     status: Mapped[str] = mapped_column(String(20), default="lobby")
     current_round: Mapped[int] = mapped_column(default=0)
     total_rounds: Mapped[int] = mapped_column(default=5)
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     finished_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
     players: Mapped[list["GamePlayer"]] = relationship(
@@ -73,7 +73,7 @@ class GamePlayer(Base):
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
     score: Mapped[int] = mapped_column(default=0)
-    joined_at: Mapped[datetime] = mapped_column(default=func.now())
+    joined_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     is_host: Mapped[bool] = mapped_column(default=False)
 
     game: Mapped["Game"] = relationship(back_populates="players")
@@ -123,7 +123,7 @@ class Answer(Base):
     normalized_text: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     is_correct: Mapped[Optional[bool]] = mapped_column(nullable=True)
     score: Mapped[int] = mapped_column(default=0)
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     round: Mapped["Round"] = relationship(back_populates="answers")
     player: Mapped["Player"] = relationship(back_populates="answers")
@@ -158,7 +158,8 @@ class PlayerXP(Base):
     level: Mapped[int] = mapped_column(default=1)
     total_xp_earned: Mapped[int] = mapped_column(default=0)
     updated_at: Mapped[datetime] = mapped_column(
-        default=func.now(), onupdate=func.now()
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     player: Mapped["Player"] = relationship(back_populates="xp")
@@ -175,7 +176,8 @@ class Streak(Base):
     max_streak: Mapped[int] = mapped_column(default=0)
     last_played_date: Mapped[Optional[date]] = mapped_column(nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
-        default=func.now(), onupdate=func.now()
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     player: Mapped["Player"] = relationship(back_populates="streak")
@@ -191,7 +193,7 @@ class SeasonalEvent(Base):
     starts_at: Mapped[datetime] = mapped_column()
     ends_at: Mapped[datetime] = mapped_column()
     active: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class GroupConfig(Base):
@@ -221,7 +223,7 @@ class WordListItem(Base):
     word: Mapped[str] = mapped_column(String(128))
     normalized: Mapped[str] = mapped_column(String(128), index=True)
     source: Mapped[str] = mapped_column(String(16), default="seed")
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def __repr__(self) -> str:
         return f"<WordListItem id={self.id} cat={self.category} word={self.word}>"
@@ -231,7 +233,7 @@ class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    timestamp: Mapped[datetime] = mapped_column(default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)
     level: Mapped[str] = mapped_column(String(20), default="ERROR")
     handler: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     user_id: Mapped[Optional[int]] = mapped_column(
@@ -256,4 +258,4 @@ class MessageLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
     message_id: Mapped[int] = mapped_column(BigInteger)
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

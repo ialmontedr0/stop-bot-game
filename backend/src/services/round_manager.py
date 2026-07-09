@@ -18,6 +18,7 @@ from src.db.engine import async_session_factory
 from src.db.models import Player, GamePlayer
 from src.db.repositories.game_repository import GameRepository
 from src.db.repositories.round_repository import RoundRepository
+from src.image_generator import generate_podium_image
 from src.keyboards.round import inter_round_keyboard, stop_keyboard, letter_keyboard
 from src.services.score_engine import FIRST_COMPLETER_BONUS, ScoreEngine
 from src.services.spell_corrector import get_corrector
@@ -130,6 +131,26 @@ class RoundManager:
 
         while True:
             try:
+                from src.image_generator import generate_round_letter_image
+
+                img_bytes = generate_round_letter_image(
+                    letter=letter,
+                    round_number=round_number,
+                    category_count=len(effective_categories),
+                )
+                if img_bytes:
+                    from io import BytesIO
+                    from aiogram.types import BufferedInputFile
+
+                    photo = BufferedInputFile(
+                        img_bytes, filename=f"round_{round_number}.png"
+                    )
+                    await bot.send_photo(
+                        chat_id=group_chat_id,
+                        photo=photo,
+                        caption=f"🛑 <b>Ronda: {round_number} - Letra: {letter}</b>",
+                    )
+
                 msg = await bot.send_message(group_chat_id, text)
                 break
             except TelegramRetryAfter as e:
@@ -223,7 +244,7 @@ class RoundManager:
                     answers=parsed,
                 )
         except Exception:
-            logger.exception("Error al guardar respuestas en DB")
+            logger.exception("Error al guardar respuestas en DB: game_id=%s player_id=%s", game_id, player.id)
             return False
 
         async with self._lock_for(game_id):
@@ -722,10 +743,21 @@ class RoundManager:
 
         await LeaderboardRepository.recalculate_ranks()
 
+        podium_data = [
+            (state.player_names.get(pid, f"Jugador {pid}"), score)
+            for pid, score in winners[:5]
+        ]
+        podium_bytes = generate_podium_image(podium_data, state.round_number)
+        if podium_bytes:
+            from aiogram.types import BufferedInputFile
+
+            photo = BufferedInputFile(podium_bytes, filename="podium.png")
+            await bot.send_photo(state.group_chat_id, photo=photo)
+
         lines = ["<b>🏆 ¡Partida finalizada!</b>", ""]
         if winners:
+            medals = ["🥇", "🥈", "🥉"]
             for i, (pid, score) in enumerate(winners[:3]):
-                medals = ["🥇", "🥈", "🥉"]
                 name = state.player_names.get(pid, f"Jugador {pid}")
                 xp_info = xp_results.get(pid, {})
                 xp_text = f" (+{xp_info.get('xp_gained', 0)} XP)" if xp_info else ""
@@ -733,11 +765,9 @@ class RoundManager:
                     f"{medals[i] if i < 3 else i + 1}. {name} — {score} pts{xp_text}"
                 )
 
-                # Mensaje de subida de nivel
                 if xp_info.get("leveled_up"):
                     title = xp_info.get("title", "")
                     title_text = f" | 🎖{title}" if title else ""
-
                     await bot.send_message(
                         state.group_chat_id,
                         f"🎉 <b>{name} ha subido al nivel {xp_info['level']}!</b>{title_text}",
@@ -745,7 +775,6 @@ class RoundManager:
         else:
             lines.append("  No hay puntuaciones registradas.")
 
-        # Evento activo
         from src.services.event_service import event_service
 
         active_events = await event_service.get_active_events()
@@ -945,34 +974,34 @@ class RoundManager:
 
         return "\n".join(lines)
 
-    def cancel_game(self, game_id: int) -> None:
-        """Limpia todo el estado en memoria de una partida cancelada."""
-        state = self._rounds.pop(game_id, None)
-        if state:
-            state.cancelled = True
-            for task in (
-                state.timer_task,
-                state.letter_timeout_task,
-                state.update_task,
-                state.inter_round_timeout_task,
-            ):
-                if task and not task.done():
-                    task.cancel()
-            self._rounds_by_group.pop(state.group_chat_id, None)
+    async def cancel_game(self, game_id: int) -> None:
+        async with self._lock_for(game_id):
+            state = self._rounds.pop(game_id, None)
+            if state:
+                state.cancelled = True
+                for task in (
+                    state.timer_task,
+                    state.letter_timeout_task,
+                    state.update_task,
+                    state.inter_round_timeout_task,
+                ):
+                    if task and not task.done():
+                        task.cancel()
+                self._rounds_by_group.pop(state.group_chat_id, None)
 
-        pending = self._letter_pending.pop(game_id, None)
-        if pending and pending is not state:
-            pending.cancelled = True
-            for task in (
-                pending.letter_timeout_task,
-                pending.inter_round_timeout_task,
-            ):
-                if task and not task.done():
-                    task.cancel()
-            self._rounds_by_group.pop(pending.group_chat_id, None)
+            pending = self._letter_pending.pop(game_id, None)
+            if pending and pending is not state:
+                pending.cancelled = True
+                for task in (
+                    pending.letter_timeout_task,
+                    pending.inter_round_timeout_task,
+                ):
+                    if task and not task.done():
+                        task.cancel()
+                self._rounds_by_group.pop(pending.group_chat_id, None)
 
-        self._locks.pop(game_id, None)
-        logger.info("Estado en memoria cancelado para game %s", game_id)
+            self._locks.pop(game_id, None)
+            logger.info("Estado en memoria cancelado para game %s", game_id)
 
     async def _get_leader_telegram_id(self, game_id: int) -> Optional[int]:
         async with async_session_factory() as session:
@@ -1002,9 +1031,53 @@ class RoundManager:
 
     async def _round_timer(self, state: RoundState, bot: Bot) -> None:
         try:
-            await asyncio.sleep(state.round_time)
+            for remaining in range(state.round_time, 0, -1):
+                if state.timer_task and state.timer_task.done():
+                    return
+                try:
+                    text = self._format_round_message(
+                        state.round_number, state.letter, state.categories, remaining
+                    )
+                    # Anadir seccion de respondidos
+                    parts = [text]
+                    if state.submitted_player_ids:
+                        parts.append("")
+                        parts.append("✅ <b>Respondieron:</b>")
+                        for pid in state.submitted_player_ids:
+                            name = state.player_names.get(pid, f"Jugador {pid}")
+                            completed = (
+                                "⭐" if pid in state.complete_player_ids else "⬜"
+                            )
+                            parts.append(f" {completed} {name}")
+                    if state.first_completer_id:
+                        name = state.first_completer_name or "Alguien"
+                        parts.append("")
+                        parts.append(f"⏹ <b>{name} completo todas las categorias</b>")
+                        parts.append(f" Stop: {state.stop_presses}/{NUM_STOP_BUTTONS}")
+                    await bot.edit_message_text(
+                        "\n".join(parts),
+                        chat_id=state.message_chat_id,
+                        message_id=state.message_id,
+                    )
+                except TelegramBadRequest:
+                    pass
+                except TelegramRetryAfter as e:
+                    await asyncio.sleep(e.retry_after)
+
+                # Esperar 1s pero permitir cancelacion
+                try:
+                    await asyncio.wait_for(
+                        asyncio.get_event_loop().create_future(), timeout=1
+                    )
+                except asyncio.TimeoutError:
+                    continue
+                except asyncio.CancelledError:
+                    return
+
+            # Tiempo agotado
             async with self._lock_for(state.game_id):
                 await self._close_round(state.game_id, "timeout", bot)
+
         except asyncio.CancelledError:
             pass
 
@@ -1014,7 +1087,6 @@ class RoundManager:
     ) -> str:
         cats_display = "\n".join(f"  <b>{cat}:</b> ..." for cat in categories)
         return (
-            f"🛑 <b>Ronda {round_number} — Letra: {letter}</b>\n"
             f"⏱ {round_time} segundos\n\n"
             f"Envía tus respuestas en este formato:\n\n"
             f"{cats_display}"

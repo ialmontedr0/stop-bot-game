@@ -89,8 +89,10 @@ class XPService:
                 xp_gained += XP_PER_STOP
             xp_gained += unique_answers * XP_PER_UNIQUE
 
-            streak = await XPService._get_or_create_streak(player_id)
-            if streak.current_streak >= 3:
+            streak_stmt = select(Streak).where(Streak.player_id == player_id)
+            streak_result = await session.execute(streak_stmt)
+            streak = streak_result.scalar_one_or_none()
+            if streak and streak.current_streak >= 3:
                 xp_gained += XP_STREAK_BONUS
 
             from src.services.event_service import event_service
@@ -117,45 +119,35 @@ class XPService:
             }
 
     @staticmethod
-    async def _get_or_create_streak(player_id: int) -> Streak:
+    async def update_streak(player_id: int) -> dict:
         async with async_session_factory() as session:
             stmt = select(Streak).where(Streak.player_id == player_id)
             result = await session.execute(stmt)
             streak = result.scalar_one_or_none()
             if not streak:
-                streak = Streak(player_id=player_id)
+                streak = Streak(player_id=player_id, current_streak=0, max_streak=0)
                 session.add(streak)
-                await session.flush()
-                await session.refresh(streak)
-            return streak
 
-    @staticmethod
-    async def update_streak(player_id: int) -> dict:
-        streak = await XPService._get_or_create_streak(player_id)
-        today = date.today()
+            today = date.today()
+            if streak.last_played_date is None:
+                streak.current_streak = 1
+            elif streak.last_played_date == today:
+                pass
+            elif streak.last_played_date == today - timedelta(days=1):
+                streak.current_streak += 1
+            else:
+                streak.current_streak = 1
 
-        if streak.last_played_date is None:
-            streak.current_streak = 1
-        elif streak.last_played_date == today:
-            pass
-        elif streak.last_played_date == today - timedelta(days=1):
-            streak.current_streak += 1
-        else:
-            streak.current_streak = 1
+            if streak.current_streak > streak.max_streak:
+                streak.max_streak = streak.current_streak
+            streak.last_played_date = today
 
-        if streak.current_streak > streak.max_streak:
-            streak.max_streak = streak.current_streak
-
-        streak.last_played_date = today
-
-        async with async_session_factory() as session:
-            session.add(streak)
             await session.commit()
 
-        return {
-            "current_streak": streak.current_streak,
-            "max_streak": streak.max_streak,
-        }
+            return {
+                "current_streak": streak.current_streak,
+                "max_streak": streak.max_streak,
+            }
 
     @staticmethod
     async def get_profile(player_id: int) -> dict | None:

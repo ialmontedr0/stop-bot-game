@@ -8,11 +8,13 @@ LETTERS = [
 
 
 def stop_keyboard(game_id: int, stop_number: int) -> InlineKeyboardMarkup:
+    filled = "🟩" * stop_number
+    empty = "⬜" * (10 - stop_number)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"⏹ Stop {stop_number}/10",
+                    text=f"🛑 Stop {filled}{empty}",
                     callback_data=f"stop:{game_id}:{stop_number}",
                 )
             ]
@@ -25,19 +27,23 @@ def letter_keyboard(game_id: int, include_n: bool = False) -> InlineKeyboardMark
     if include_n:
         idx = letters.index("N") + 1
         letters.insert(idx, "Ñ")
-    rows = []
-    row = []
-    for i, letter in enumerate(letters):
-        row.append(
+
+    row_sizes = [6, 7, 7, 7]
+    keyboard = []
+    start = 0
+    for size in row_sizes:
+        chunk = letters[start:start + size]
+        if not chunk:
+            break
+        keyboard.append([
             InlineKeyboardButton(
                 text=letter,
                 callback_data=f"letter:{game_id}:{letter}",
             )
-        )
-        if len(row) == 6 or i == len(LETTERS) - 1:
-            rows.append(row)
-            row = []
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+            for letter in chunk
+        ])
+        start += size
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def inter_round_keyboard(game_id: int) -> InlineKeyboardMarkup:

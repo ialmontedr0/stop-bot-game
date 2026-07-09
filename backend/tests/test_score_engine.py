@@ -87,7 +87,7 @@ class TestIsValidWord:
     def test_invalid_whitespace_only(self):
         assert _is_valid_word("   ") is False
 
-    def test_invalid_single_char(self):
+    def test_valid_single_char(self):
         assert _is_valid_word("A") is True  # una letra es válida
 
 

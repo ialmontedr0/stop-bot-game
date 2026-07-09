@@ -36,7 +36,7 @@ async def handle_round_answer(message: Message, player: Player, bot: Bot) -> Non
             bot=bot,
         )
     except Exception:
-        logger.exception("Error al procesar respuesta")
+        logger.exception("Error al procesar respuesta de %s en game %s", player.telegram_id, state.game_id)
 
 
 @round_router.callback_query(F.data.startswith("stop:"))

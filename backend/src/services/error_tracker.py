@@ -357,7 +357,7 @@ class ErrorTracker:
                 )
 
         except Exception:
-            pass
+            logger.warning("No se pudieron obtener métricas de la API de corrección")
 
         lines.append("└──────────────────────────────────────────────")
         return "\n".join(lines)

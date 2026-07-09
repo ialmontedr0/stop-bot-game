@@ -132,7 +132,7 @@ class LobbyManager:
                 player.telegram_id,
                 f"{PLACEHOLDER}",
             )
-        except Exception:
+        except (TelegramBadRequest, TelegramForbiddenError):
             logger.warning("No se pudo enviar DM a %s", player.telegram_id)
 
     # --- Unirse ------------------------------------------------------------
@@ -196,9 +196,7 @@ class LobbyManager:
                 repo = GameRepository(session)
                 db_game = await repo.get_by_id(game_id)
                 if db_game and db_game.status == STATUS_PLAYING:
-                    await callback.answer(
-                        "❌ La partida ya comenzó.", show_alert=True
-                    )
+                    await callback.answer("❌ La partida ya comenzó.", show_alert=True)
                     return
                 if db_game and db_game.status == STATUS_CANCELLED:
                     await callback.answer(
@@ -247,7 +245,7 @@ class LobbyManager:
 
             await repo.update_game_status(db_game, STATUS_CANCELLED)
 
-        round_manager.cancel_game(db_game.id)
+            await round_manager.cancel_game(db_game.id)
 
         if state:
             self._cleanup(state)
@@ -311,7 +309,7 @@ class LobbyManager:
         try:
             dots = 0
             while True:
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
                 if state.group_chat_id not in self._lobbies:
                     break
                 dots = (dots % 3) + 1
@@ -330,7 +328,7 @@ class LobbyManager:
                         reply_markup=keyboard,
                     )
                 except (TelegramBadRequest, TelegramForbiddenError) as e:
-                    logger.warning("Error editando el mensaje lobby", error=e)
+                    logger.warning("Error editando el mensaje lobby", exc_info=e)
         except asyncio.CancelledError:
             pass
 
@@ -407,9 +405,27 @@ class LobbyManager:
             state.group_chat_id,
             f"🎮 <b>¡Partida iniciada!</b>\n\n"
             f"{len(state.player_telegram_ids)} jugadores:\n"
-            f"{participants}\n\n"
-            f"<i>Preparando ronda 1...</i>",
+            f"{participants}\n\n",
         )
+
+        # === Countdown 3-2-1 ===
+        count_msg = await bot.send_message(
+            state.group_chat_id,
+            "⏰ <b>Preparando ronda 1...</b>",
+        )
+        for i in range(3, 0, -1):
+            await asyncio.sleep(1)
+            try:
+                await count_msg.edit_text(
+                    f"<b>{i}...</b>"
+                )
+            except TelegramBadRequest:
+                pass
+        try:
+            await count_msg.delete()
+        except TelegramBadRequest:
+            pass
+        # === Fin countdoun ===
 
         async with async_session_factory() as session:
             repo = GameRepository(session)

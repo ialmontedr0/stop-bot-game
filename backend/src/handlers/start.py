@@ -9,7 +9,11 @@ start_router = Router()
 
 @start_router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    msg = await message.answer(
+    from src.image_generator import generate_welcome_image
+    from aiogram.types import BufferedInputFile
+
+    img_bytes = generate_welcome_image()
+    text = (
         "<b>🛑 Stop Bot</b>\n\n"
         "El juego clásico de <b>Stop / Basta</b> ahora en Telegram.\n\n"
         "<b>Comandos para jugar:</b>\n"
@@ -28,13 +32,22 @@ async def cmd_start(message: Message) -> None:
         "• /resolve — Marcar errores como resueltos\n\n"
         "¡Añádeme a un grupo y juega con tus amigos!"
     )
+    if img_bytes:
+        photo = BufferedInputFile(img_bytes, filename="welcome.png")
+        msg = await message.answer_photo(photo=photo, caption=text)
+    else:
+        msg = await message.answer(text)
     if message.chat.type in ("group", "supergroup"):
         asyncio.create_task(delete_after(msg))
 
 
 @start_router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    msg = await message.answer(
+    from src.image_generator import generate_help_image
+    from aiogram.types import BufferedInputFile
+
+    img_bytes = generate_help_image()
+    text = (
         "<b>📖 ¿Cómo jugar?</b>\n\n"
         "1. Ve a un grupo y escribe /stop\n"
         "2. Espera a que se unan jugadores (máx. 10)\n"
@@ -47,5 +60,10 @@ async def cmd_help(message: Message) -> None:
         "• Respuesta incorrecta o vacía → 0 pts\n\n"
         "<b>¿Más dudas?</b> Háblale a @perezheredia el sabe como es la vaina."
     )
+    if img_bytes:
+        photo = BufferedInputFile(img_bytes, filename="help.png")
+        msg = await message.answer_photo(photo=photo, caption=text)
+    else:
+        msg = await message.answer(text)
     if message.chat.type in ("group", "supergroup"):
         asyncio.create_task(delete_after(msg))

@@ -14,7 +14,7 @@ def test_lobby_keyboard_has_join_button():
     buttons = markup.inline_keyboard
     join_row = buttons[0]
     assert len(join_row) == 1
-    assert join_row[0].text == "🟢 Unirse"
+    assert join_row[0].text == "🟢 Unirse a la partida"
     assert join_row[0].callback_data == "join:1"
 
 
@@ -29,7 +29,7 @@ def test_lobby_keyboard_has_start_button_for_host():
     buttons = markup.inline_keyboard
     assert len(buttons) == 2
     start_row = buttons[1]
-    assert start_row[0].text == "▶️ Iniciar"
+    assert start_row[0].text == "▶️ Iniciar partida ahora"
     assert start_row[0].callback_data == "start:1"
 
 
@@ -53,18 +53,18 @@ def test_stop_keyboard_has_stop_button():
     buttons = markup.inline_keyboard
     assert len(buttons) == 1
     assert len(buttons[0]) == 1
-    assert buttons[0][0].text == "⏹ Stop 3/10"
+    assert buttons[0][0].text == "🛑 Stop 🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜"
     assert buttons[0][0].callback_data == "stop:1:3"
 
 
 def test_stop_keyboard_different_stops():
     markup_1 = stop_keyboard(game_id=42, stop_number=1)
     assert markup_1.inline_keyboard[0][0].callback_data == "stop:42:1"
-    assert markup_1.inline_keyboard[0][0].text == "⏹ Stop 1/10"
+    assert markup_1.inline_keyboard[0][0].text == "🛑 Stop 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜"
 
     markup_10 = stop_keyboard(game_id=42, stop_number=10)
     assert markup_10.inline_keyboard[0][0].callback_data == "stop:42:10"
-    assert markup_10.inline_keyboard[0][0].text == "⏹ Stop 10/10"
+    assert markup_10.inline_keyboard[0][0].text == "🛑 Stop 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩"
 
 
 def test_letter_keyboard_returns_inline_keyboard():
@@ -94,6 +94,8 @@ def test_letter_keyboard_callback_format():
 def test_letter_keyboard_rows_grouped():
     markup = letter_keyboard(game_id=1)
     rows = markup.inline_keyboard
-    assert len(rows) >= 4
-    for row in rows:
-        assert len(row) <= 6
+    assert len(rows) == 4
+    assert len(rows[0]) == 6
+    assert len(rows[1]) == 7
+    assert len(rows[2]) == 7
+    assert len(rows[3]) == 6  # U-Z (6 letras restantes)

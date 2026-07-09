@@ -106,11 +106,10 @@ async def cmd_profile(message: Message, player: Player) -> None:
                 f"📈 Progreso al nivel {xp_data['level'] + 1}: "
                 f"{xp_data['progress_pct']}%"
             )
-            # Barra de progreso simple
             bar_len = 10
             filled = int(xp_data["progress_pct"] / 100 * bar_len)
-            bar = "▓" * filled + "░" * (bar_len - filled)
-            lines.append(f"  {bar}")
+            bar = "🟩" * filled + "⬜" * (bar_len - filled)
+            lines.append(f"  {bar}  {xp_data['progress_pct']:.0f}%")
 
         # Sección racha
         if xp_data and xp_data["streak"] > 0:

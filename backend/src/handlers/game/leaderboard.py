@@ -34,22 +34,30 @@ async def cmd_leaderboard(message: Message) -> None:
             )
             return
 
-        lines = [
-            f"{hbold('🏆 Leaderboard Semanal')}",
-            f"📅 {_current_week_range()}\n",
-        ]
+        entries = [(e["rank"], e["name"], e["score"]) for e in rows]
+        from src.image_generator import generate_leaderboard_image
+        img_bytes = generate_leaderboard_image(entries, _current_week_range())
+        if img_bytes:
+            from aiogram.types import BufferedInputFile
+            photo = BufferedInputFile(img_bytes, filename="leaderboard.png")
+            await message.answer_photo(photo=photo)
+        else:
+            lines = [
+                f"{hbold('🏆 Leaderboard Semanal')}",
+                f"📅 {_current_week_range()}\n",
+            ]
+            medals = ["🥇", "🥈", "🥉"]
+            for entry in rows:
+                rank = entry["rank"]
+                medal = medals[rank - 1] if rank <= 3 else f"{rank}."
+                name = entry["name"]
+                score = entry["score"]
+                games = entry["games"]
+                lines.append(f"{medal} {name} — {score} pts ({games} partidas)")
+            await status_msg.edit_text("\n".join(lines))
+            return
 
-        medals = ["🥇", "🥈", "🥉"]
-        for entry in rows:
-            rank = entry["rank"]
-            medal = medals[rank - 1] if rank <= 3 else f"{rank}."
-            name = entry["name"]
-            score = entry["score"]
-            games = entry["games"]
-            lines.append(f"{medal} {name} — {score} pts ({games} partidas)")
-
-        text = "\n".join(lines)
-        await status_msg.edit_text(text)
+        await status_msg.delete()
 
     except Exception:
         logger.exception("Error en /leaderboard")
@@ -81,9 +89,12 @@ async def cmd_rank(message: Message) -> None:
     elif data["rank"] == 3:
         medal = "🥉 "
 
+    from src.utils import progress_bar
+    rank_bar = progress_bar(data["rank"], 10, 10)
     await message.reply(
         f"{hbold('📊 Tu Rank Semanal')}\n\n"
         f"{medal}Puesto: #{data['rank']}\n"
         f"⭐ Puntaje: {data['score']} pts\n"
-        f"🎮 Partidas: {data['games']}"
+        f"🎮 Partidas: {data['games']}\n\n"
+        f"{rank_bar}"
     )

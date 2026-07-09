@@ -77,6 +77,12 @@ class SpellCorrector:
         self._word_lists: dict[str, set[str]] = {
             cat: set(words) for cat, words in SEED_WORDS.items()
         }
+        self._pending_tasks: set[asyncio.Task] = set()
+
+    def _track_task(self, task: asyncio.Task) -> asyncio.Task:
+        self._pending_tasks.add(task)
+        task.add_done_callback(self._pending_tasks.discard)
+        return task
 
     def _default_model(self) -> str:
         return (
@@ -265,7 +271,7 @@ class SpellCorrector:
             if best is not None:
                 best_norm = self.normalize(best)
                 cat_words.add(best_norm)
-                asyncio.create_task(self.add_to_word_list_persistent(best, category))
+                self._track_task(asyncio.create_task(self.add_to_word_list_persistent(best, category)))
                 return best_norm
 
         # 3 - AI correccion (solo en modo AI o hybryd)
@@ -282,9 +288,9 @@ class SpellCorrector:
                     decoded = cached.decode() if isinstance(cached, bytes) else cached
                     if decoded:
                         cat_words.add(decoded)
-                        asyncio.create_task(
+                        self._track_task(asyncio.create_task(
                             self.add_to_word_list_persistent(decoded, category)
-                        )
+                        ))
                         return decoded
 
             corrected = await self._ai_correct(word)
@@ -292,9 +298,9 @@ class SpellCorrector:
                 self._api_calls += 1
                 corrected_norm = self.normalize(corrected)
                 cat_words.add(corrected_norm)
-                asyncio.create_task(
+                self._track_task(asyncio.create_task(
                     self.add_to_word_list_persistent(corrected_norm, category)
-                )
+                ))
                 # Cachear en Redis (1 hora)
                 if redis:
                     await redis.setex(cache_key, 3600, corrected_norm)
@@ -426,7 +432,7 @@ class SpellCorrector:
             if best is not None:
                 best_norm = self.normalize(best)
                 cat_words.add(best_norm)
-                asyncio.create_task(self.add_to_word_list_persistent(best, category))
+                self._track_task(asyncio.create_task(self.add_to_word_list_persistent(best, category)))
                 self._validation_source[f"{cat_lower}:{norm}"] = "fuzzy"
                 return True
 
@@ -443,9 +449,9 @@ class SpellCorrector:
                     val = cached.decode() if isinstance(cached, bytes) else cached
                     if val == "true":
                         cat_words.add(norm)
-                        asyncio.create_task(
+                        self._track_task(asyncio.create_task(
                             self.add_to_word_list_persistent(norm, category)
-                        )
+                        ))
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai_cache"
                     return val == "true"
 
@@ -456,9 +462,9 @@ class SpellCorrector:
                     await redis.setex(cache_key, 3600, str(result).lower())
                 if result:
                     cat_words.add(norm)
-                    asyncio.create_task(
+                    self._track_task(asyncio.create_task(
                         self.add_to_word_list_persistent(norm, category)
-                    )
+                    ))
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai"
                 else:
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai_rejected"

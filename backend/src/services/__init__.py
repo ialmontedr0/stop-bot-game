@@ -4,8 +4,7 @@ from .round_manager import RoundManager, round_manager
 from .score_engine import ScoreEngine
 from .spell_corrector import SpellCorrector, get_corrector
 
-# Singleton del corrector ortografico (lazy, sin circular imports)
-spell_corrector = get_corrector()
+
 
 __all__ = [
     "ErrorTracker",
@@ -15,6 +14,6 @@ __all__ = [
     "SpellCorrector",
     "RoundManager",
     "round_manager",
-    "spell_corrector",
+    "get_corrector",
     "game_orchestrator",
 ]

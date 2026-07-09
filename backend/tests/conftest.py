@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,13 +8,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from src.db.models import Base, Game, GamePlayer, Player, WordListItem
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="function")
