@@ -92,8 +92,6 @@ class RoundRepository(BaseRepository[Round]):
             self.session.add(a)
             result.append(a)
         await self.session.commit()
-        for a in result:
-            await self.session.refresh(a)
         return result
 
     async def get_answers_by_player(self, round_id: int) -> dict[int, list[Answer]]:
@@ -118,11 +116,15 @@ class RoundRepository(BaseRepository[Round]):
         self,
         answer_scores: list[tuple[int, bool, int]],
     ) -> None:
+        from sqlalchemy import update as sql_update
+
+        from src.db.models import Answer
+
+        values = []
         for answer_id, is_correct, score in answer_scores:
-            ans = await self.session.get(Answer, answer_id)
-            if ans:
-                ans.is_correct = is_correct
-                ans.score = score
+            values.append({"id": answer_id, "is_correct": is_correct, "score": score})
+
+        await self.session.execute(sql_update(Answer), values)
         await self.session.flush()
 
     async def get_game_player_by_telegram(
