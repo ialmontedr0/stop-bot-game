@@ -498,7 +498,11 @@ class SpellCorrector:
             else:
                 self._api_failed += 1
 
-        # 4 - Default permisivo
+        # 4 - Default permisivo (API agotada o modo local)
+        cat_words.add(norm)
+        self._track_task(
+            asyncio.create_task(self.add_to_word_list_persistent(norm, category))
+        )
         self._validation_source[f"{cat_lower}:{norm}"] = "default"
         return True
 
