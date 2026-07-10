@@ -573,7 +573,7 @@ class SpellCorrector:
             if content is None:
                 return None
             answer = content.strip().lower()
-            return answer.strip() in ("si", "sí")
+            return answer.startswith("si") or answer.startswith("sí")
         except httpx.TimeoutException:
             logger.warning("Timeout en AI validation para '%s' en %s", word, category)
             return None
