@@ -164,18 +164,27 @@ nano backend/.env
 
 (Si `nano` no te gusta, usa `vim backend/.env` o cualquier editor).
 
-Dentro del editor, pega esto (reemplazando con tus datos reales):
+Dentro del editor, pega esto (reemplazando `TU_PASSWORD` por tu contraseña de PostgreSQL):
 
 ```ini
-BOT_TOKEN=123456:ABCdef...token_de_botfather
-DATABASE_URL=postgresql+asyncpg://ialmontedr0:tucontraseña@postgresql.alwaysdata.com:5432/ialmontedr0_stopbot
+BOT_TOKEN=tu_bot_token
+DATABASE_URL=postgresql+asyncpg://ialmontedr0:TU_PASSWORD@postgresql-ialmontedr0.alwaysdata.net:5432/stopbot
 REDIS_URL=redis://localhost:6379/0
 LOG_LEVEL=INFO
+
+# === Modo de correccion ortografica ===
+SPELL_MODE=hybrid
+SPELL_API_KEY=gsk_tu_groq_api_key
+SPELL_API_URL=https://api.groq.com/openai/v1
+SPELL_API_LIMIT=20
+SPELL_FUZZY_THRESHOLD=75
+SPELL_AI_PROVIDER=openai
+SPELL_AI_MODEL=llama-3.3-70b-versatile
 ```
 
-- **BOT_TOKEN**: el token que te dio @BotFather.
-- **DATABASE_URL**: la URL que armaste en el Paso 2.
-- **REDIS_URL**: déjalo tal cual. Como Alwaysdata no tiene Redis, el bot usará automáticamente `MemoryStorage` (guardará datos en memoria).
+- **SPELL_MODE**: `local` (solo fuzzy), `ai` (solo API), `hybrid` (fuzzy + API, recomendado)
+- **SPELL_API_KEY**: tu clave de Groq (o de OpenAI/Gemini)
+- **SPELL_API_URL**: `https://api.groq.com/openai/v1` para Groq (gratis, 30 req/min). Para Gemini: `https://generativelanguage.googleapis.com/v1beta/openai` con `SPELL_AI_PROVIDER=gemini`
 
 Para guardar y salir de `nano`:
 1. Presiona `Ctrl+O` (guardar).
