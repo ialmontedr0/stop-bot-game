@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from src.i18n import LOCALE_MAP, _get_translation, _translations, get_user_locale, t
 
 
@@ -78,7 +76,9 @@ class TestT:
     def setup_method(self):
         _translations.clear()
 
-    def test_basic_translation(self, ):
+    def test_basic_translation(
+        self,
+    ):
         tr = _get_translation("es")
         _translations["es"] = tr
         result = t("Hola", locale="es")

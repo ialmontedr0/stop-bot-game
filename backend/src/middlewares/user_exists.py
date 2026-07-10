@@ -1,3 +1,4 @@
+import contextlib
 import logging
 
 from aiogram import BaseMiddleware
@@ -41,13 +42,11 @@ class UserExistsMiddleware(BaseMiddleware):
                     logger.exception("ErrorTracker falló al capturar error en UserExistsMiddleware")
                 bot = data.get("bot")
                 if bot and user:
-                    try:
+                    with contextlib.suppress(Exception):
                         await bot.send_message(
                             user.id,
                             "❌ Error de conexión. Intenta de nuevo.",
                         )
-                    except Exception:
-                        pass
                 return
         return await handler(event, data)
 

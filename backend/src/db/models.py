@@ -205,9 +205,7 @@ class GroupConfig(Base):
     categories: Mapped[str | None] = mapped_column(Text, nullable=True)
     include_n: Mapped[bool] = mapped_column(default=False)
     language: Mapped[str] = mapped_column(String(8), default="es")
-    validation_mode: Mapped[str | None] = mapped_column(
-        String(16), default="local", nullable=True
-    )
+    validation_mode: Mapped[str | None] = mapped_column(String(16), default="local", nullable=True)
 
 
 class WordListItem(Base):

@@ -1,4 +1,3 @@
-
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -146,4 +145,4 @@ class RoundRepository(BaseRepository[Round]):
             .where(GamePlayer.game_id == game_id, Player.telegram_id.in_(telegram_ids))
         )
         rows = (await self.session.execute(stmt)).all()
-        return {tid: gp for tid, gp in rows}
+        return dict(rows)

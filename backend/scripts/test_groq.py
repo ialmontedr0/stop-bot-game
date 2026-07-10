@@ -1,16 +1,18 @@
 """Quick Groq integration test."""
-import asyncio, httpx, os
+
+import asyncio
+import os
+
+import httpx
 from dotenv import load_dotenv
+
 load_dotenv()
+
 
 async def test():
     key = os.getenv("SPELL_API_KEY")
     url = os.getenv("SPELL_API_URL", "https://api.groq.com/openai/v1")
     model = os.getenv("SPELL_AI_MODEL", "llama-3.3-70b-versatile")
-
-    print(f"Key: {'set' if key else 'NOT SET'}")
-    print(f"URL: {url}")
-    print(f"Model: {model}")
 
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     payload = {
@@ -26,11 +28,10 @@ async def test():
     async with httpx.AsyncClient(timeout=15) as c:
         r = await c.post(f"{url.rstrip('/')}/chat/completions", headers=headers, json=payload)
         data = r.json()
-        print(f"Status: {r.status_code}")
         if r.status_code == 200:
-            content = data["choices"][0]["message"]["content"]
-            print(f"Content: {content!r}")
+            data["choices"][0]["message"]["content"]
         else:
-            print(f"Error: {data}")
+            pass
+
 
 asyncio.run(test())

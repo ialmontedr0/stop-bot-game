@@ -67,7 +67,7 @@ async def test_round_state_lifecycle(mock_bot):
     text1 = "\n".join(f"{cat}: valor_{cat}_1" for cat in CATEGORIES)
     with patch.object(_rm_mod, "async_session_factory", return_value=mock_session):
         with patch.object(_rm_mod, "RoundRepository", return_value=mock_repo):
-            result1 = await rm.submit_answers(game_id, player1, text1, mock_bot)
+            await rm.submit_answers(game_id, player1, text1, mock_bot)
 
     assert state.first_completer_id == 111
     assert state.first_completer_name == "Alice"

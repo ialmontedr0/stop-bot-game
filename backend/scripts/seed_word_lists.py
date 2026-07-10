@@ -9,8 +9,8 @@ Es idempotente: limpia cada categoria antes de reinsertar.
 """
 
 import asyncio
-import sys
 import os
+import sys
 
 # Asegurar que podemos importar desde src
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -18,12 +18,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.core.text_utils import normalize_text
 from src.db.engine import async_session_factory
 from src.db.repositories.word_list_repository import WordListRepository
+
 from .word_list_data import WORD_LIST_DATA
 
 
-async def seed_category(
-    repo: WordListRepository, category: str, words: list[str]
-) -> None:
+async def seed_category(repo: WordListRepository, category: str, words: list[str]) -> None:
     """Inserta todas las palabras de una categoria, limpiando primero.
 
     Args:
@@ -31,8 +30,7 @@ async def seed_category(
         category (str): _description_
         words (list[str]): _description_
     """
-    deleted = await repo.clear_category(category)
-    print(f" Limpiadas {deleted} entradas existentes en '{category}'")
+    await repo.clear_category(category)
 
     items = [(normalize_text(w), w.strip()) for w in words if w.strip()]
     # Eliminar duplicados normalizados dentro de la misma categoria
@@ -43,33 +41,22 @@ async def seed_category(
             seen.add(norm)
             unique_items.append((norm, orig))
 
-    count = await repo.bulk_insert(category, unique_items)
-    print(
-        f" Insertadas {count} palabras en '{category}' ({len(unique_items)} unicas normalizadas)"
-    )
-    total = await repo.count_by_category(category)
-    print(f"  Total en DB para '{category}': {total}")
+    await repo.bulk_insert(category, unique_items)
+    await repo.count_by_category(category)
 
 
 async def main() -> None:
-    print("=== Seed de Word Lists ===")
-    print()
 
     for category, words in WORD_LIST_DATA.items():
-        print(f"Procesando categoria: {category}")
         async with async_session_factory() as session:
             repo = WordListRepository(session)
             await seed_category(repo, category, words)
-        print()
 
     # Mostrar resumen final
-    print("=== Resumen final ===")
     async with async_session_factory() as session:
         repo = WordListRepository(session)
         for cat in WORD_LIST_DATA:
-            total = await repo.count_by_category(cat)
-            print(f"  {cat}: {total} palabras")
-    print("=== Seed completado ===")
+            await repo.count_by_category(cat)
 
 
 if __name__ == "__main__":

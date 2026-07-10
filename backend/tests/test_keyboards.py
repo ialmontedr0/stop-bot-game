@@ -4,14 +4,14 @@ from src.keyboards.lobby import lobby_keyboard
 from src.keyboards.round import LETTERS, letter_keyboard, stop_keyboard
 from src.keyboards.settings import (
     ALL_CATEGORIES,
+    MODE_OPTIONS,
     ROUND_OPTIONS,
     TIME_OPTIONS,
-    MODE_OPTIONS,
+    settings_cats_keyboard,
     settings_main_keyboard,
+    settings_mode_keyboard,
     settings_rounds_keyboard,
     settings_time_keyboard,
-    settings_mode_keyboard,
-    settings_cats_keyboard,
 )
 
 
@@ -117,16 +117,20 @@ def test_letter_keyboard_rows_grouped():
 
 def test_settings_main_keyboard_returns_inline_keyboard():
     markup = settings_main_keyboard(
-        current_rounds=5, current_time=60,
-        current_categories=ALL_CATEGORIES, include_n=False,
+        current_rounds=5,
+        current_time=60,
+        current_categories=ALL_CATEGORIES,
+        include_n=False,
     )
     assert isinstance(markup, InlineKeyboardMarkup)
 
 
 def test_settings_main_keyboard_has_all_sections():
     markup = settings_main_keyboard(
-        current_rounds=10, current_time=45,
-        current_categories=ALL_CATEGORIES[:4], include_n=True,
+        current_rounds=10,
+        current_time=45,
+        current_categories=ALL_CATEGORIES[:4],
+        include_n=True,
         current_mode="hybrid",
     )
     texts = [btn.text for row in markup.inline_keyboard for btn in row]
@@ -139,8 +143,10 @@ def test_settings_main_keyboard_has_all_sections():
 
 def test_settings_main_keyboard_close_button():
     markup = settings_main_keyboard(
-        current_rounds=5, current_time=60,
-        current_categories=ALL_CATEGORIES, include_n=False,
+        current_rounds=5,
+        current_time=60,
+        current_categories=ALL_CATEGORIES,
+        include_n=False,
     )
     last_row = markup.inline_keyboard[-1]
     assert last_row[0].callback_data == "settings_close"

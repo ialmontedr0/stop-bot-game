@@ -1,5 +1,4 @@
-from PIL import Image, ImageDraw
-import math
+from PIL import Image
 
 
 def make_gradient(w, h, color1, color2):
@@ -21,5 +20,3 @@ round_bg.save("assets/backgrounds/round_bg.png")
 # Podium bg: 800x500 degradado oscuro
 podium_bg = make_gradient(800, 600, (20, 20, 40), (10, 10, 20))
 podium_bg.save("assets/backgrounds/podium_bg.png")
-
-print("Backgrounds generados en assets/backgrounds")

@@ -6,17 +6,20 @@ USO:
     python -m scripts.inject_test_error verify    # Muestra el reporte esperado
     python -m scripts.inject_test_error cleanup   # Marca errores inyectados como resueltos
 """
-import asyncio
+
 import argparse
-import sys
+import asyncio
 
 from src.db.engine import async_session_factory
 from src.db.repositories.error_log_repository import ErrorLogRepository
 from src.services.error_tracker import error_tracker
 
-
 EXCEPTIONS = [
-    ("sqlalchemy.exc.OperationalError", "could not connect to server: Connection refused", "CRITICAL"),
+    (
+        "sqlalchemy.exc.OperationalError",
+        "could not connect to server: Connection refused",
+        "CRITICAL",
+    ),
     ("sqlalchemy.exc.IntegrityError", "duplicate key value violates unique constraint", "HIGH"),
     ("sqlalchemy.exc.ProgrammingError", 'relation "games" does not exist', "CRITICAL"),
     ("sqlalchemy.exc.TimeoutError", "queue pool size exceeded", "MEDIUM"),
@@ -29,11 +32,10 @@ EXCEPTIONS = [
 
 
 async def inject():
-    print("Inyectando errores de prueba en error_logs...")
     async with async_session_factory() as session:
         repo = ErrorLogRepository(session)
         for exc_type, msg, level in EXCEPTIONS:
-            log = await repo.create(
+            await repo.create(
                 level=level,
                 handler=f"injected_{exc_type.split('.')[-1]}",
                 user_id=1,
@@ -42,24 +44,18 @@ async def inject():
                 exception_type=exc_type,
                 exception_message=msg or "(sin mensaje)",
                 traceback=(
-                    f'Traceback (most recent call last):\n'
+                    f"Traceback (most recent call last):\n"
                     f'  File "smoke_test.py", line 1, in <module>\n'
                     f'    raise {exc_type}("{msg}")\n'
-                    f'{exc_type}: {msg}'
+                    f"{exc_type}: {msg}"
                 ),
                 context={"injected": True, "source": "smoke_test", "phase": "4D"},
             )
-            print(f"  OK #{log.id} {exc_type}")
-    print(f"\nInyectados {len(EXCEPTIONS)} errores. Ejecuta /diagnose en el grupo para verlos.")
 
 
 async def verify():
-    print("\n" + "=" * 55)
-    print("  REPORTE DE DIAGNÓSTICO PREVISTO")
-    print("=" * 55)
     report = await error_tracker.generate_report(minutes=9999)
-    ascii_safe = report.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
-    print(ascii_safe)
+    report.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
 
 
 async def cleanup():
@@ -71,7 +67,6 @@ async def cleanup():
             if err.context and '"injected": true' in err.context:
                 await repo.mark_resolved(err.id, resolution="Eliminado post-smoke-test-4D")
                 count += 1
-        print(f"Marcados {count} errores inyectados como resueltos.")
 
 
 if __name__ == "__main__":

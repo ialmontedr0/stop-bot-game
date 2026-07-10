@@ -1,6 +1,7 @@
 """Utilidades generales."""
 
 import asyncio
+import contextlib
 import logging
 
 from aiogram import Bot
@@ -13,10 +14,8 @@ logger = logging.getLogger(__name__)
 async def delete_after(message: Message, delay: int = 20) -> None:
     try:
         await asyncio.sleep(delay)
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await message.delete()
-        except TelegramBadRequest:
-            pass
     except asyncio.CancelledError:
         pass
 

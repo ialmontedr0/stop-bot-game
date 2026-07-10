@@ -5,16 +5,15 @@ Revises:
 Create Date: 2025-01-01 00:00:00.000000
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "0001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -67,8 +66,14 @@ def upgrade() -> None:
         sa.Column("score", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("joined_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.Column("is_host", sa.Boolean(), nullable=False, server_default="false"),
-        sa.ForeignKeyConstraint(["game_id"], ["games.id"], ),
-        sa.ForeignKeyConstraint(["player_id"], ["players.id"], ),
+        sa.ForeignKeyConstraint(
+            ["game_id"],
+            ["games.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["player_id"],
+            ["players.id"],
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 
@@ -82,8 +87,14 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("stopped_at", sa.DateTime(), nullable=True),
         sa.Column("stopped_by_player_id", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["game_id"], ["games.id"], ),
-        sa.ForeignKeyConstraint(["stopped_by_player_id"], ["players.id"], ),
+        sa.ForeignKeyConstraint(
+            ["game_id"],
+            ["games.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["stopped_by_player_id"],
+            ["players.id"],
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 
@@ -99,9 +110,18 @@ def upgrade() -> None:
         sa.Column("is_correct", sa.Boolean(), nullable=True),
         sa.Column("score", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(["game_player_id"], ["game_players.id"], ),
-        sa.ForeignKeyConstraint(["player_id"], ["players.id"], ),
-        sa.ForeignKeyConstraint(["round_id"], ["rounds.id"], ),
+        sa.ForeignKeyConstraint(
+            ["game_player_id"],
+            ["game_players.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["player_id"],
+            ["players.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["round_id"],
+            ["rounds.id"],
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 
@@ -113,7 +133,10 @@ def upgrade() -> None:
         sa.Column("total_score", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("games_played", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("rank", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["player_id"], ["players.id"], ),
+        sa.ForeignKeyConstraint(
+            ["player_id"],
+            ["players.id"],
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 

@@ -229,8 +229,8 @@ class ScoreEngine:
             answer_scores = _determine_answer_scores(
                 player_answers, spell_corrector, letter=letter, category=canonical_cat
             )
-            answers_by_pid = {pid: ans for pid, ans in player_answers}
-            for pid, (is_unique, cat_score) in answer_scores.items():
+            answers_by_pid = dict(player_answers)
+            for pid, (_is_unique, cat_score) in answer_scores.items():
                 totals[pid] += cat_score
                 ans = answers_by_pid.get(pid)
                 if ans is not None:

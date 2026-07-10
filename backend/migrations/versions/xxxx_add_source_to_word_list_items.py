@@ -2,8 +2,8 @@
 Revision ID: xxxx
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "xxxx"
 down_revision = "0a0eda58588a"

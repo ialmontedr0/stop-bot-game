@@ -1,4 +1,3 @@
-
 from sqlalchemy import select
 
 from src.db.models import GroupConfig

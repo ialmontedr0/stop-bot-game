@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import random
 import re
@@ -190,11 +191,11 @@ class RoundManager:
         state.timer_task = asyncio.create_task(self._round_timer(state, bot))
         logger.info(
             "Ronda iniciada",
-            extra=dict(
-                game_id=game_id,
-                round=round_number,
-                letter=letter,
-            ),
+            extra={
+                "game_id": game_id,
+                "round": round_number,
+                "letter": letter,
+            },
         )
 
     async def submit_answers(
@@ -319,14 +320,12 @@ class RoundManager:
             state.stop_presses += 1
 
             if state.stop_presses >= NUM_STOP_BUTTONS:
-                try:
+                with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
                     await bot.edit_message_text(
                         self._format_stop_message(NUM_STOP_BUTTONS),
                         chat_id=state.stop_message_chat_id,
                         message_id=state.stop_message_id,
                     )
-                except (TelegramBadRequest, TelegramRetryAfter):
-                    pass
                 await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
                 await self._close_round(game_id, "stop", bot)
                 return
@@ -334,15 +333,13 @@ class RoundManager:
         progress = state.stop_presses
         await callback.answer(f"⏹ Stop {progress}/{NUM_STOP_BUTTONS}", show_alert=False)
 
-        try:
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await bot.edit_message_text(
                 self._format_stop_message(progress),
                 chat_id=state.stop_message_chat_id,
                 message_id=state.stop_message_id,
                 reply_markup=stop_keyboard(game_id, progress + 1),
             )
-        except (TelegramBadRequest, TelegramRetryAfter):
-            pass
 
     async def _close_round(self, game_id: int, reason: str, bot: Bot) -> None:
         # Pop del state y cancelación de timers bajo el lock
@@ -477,10 +474,8 @@ class RoundManager:
     async def _inter_round_timeout(self, state: RoundState, bot: Bot) -> None:
         await asyncio.sleep(120)
         if state.inter_round_message_id:
-            try:
+            with contextlib.suppress(TelegramBadRequest):
                 await bot.delete_message(state.group_chat_id, state.inter_round_message_id)
-            except TelegramBadRequest:
-                pass
         await self._prompt_letter_selection(state, bot)
 
     async def handle_next_round(
@@ -504,10 +499,8 @@ class RoundManager:
             if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
                 state.inter_round_timeout_task.cancel()
             if state.inter_round_message_id:
-                try:
+                with contextlib.suppress(TelegramBadRequest):
                     await bot.delete_message(state.group_chat_id, state.inter_round_message_id)
-                except TelegramBadRequest:
-                    pass
             await callback.answer("▶️ Avanzando a la siguiente ronda...", show_alert=False)
             await self._prompt_letter_selection(state, bot)
 
@@ -532,10 +525,8 @@ class RoundManager:
             if state.inter_round_timeout_task and not state.inter_round_timeout_task.done():
                 state.inter_round_timeout_task.cancel()
             if state.inter_round_message_id:
-                try:
+                with contextlib.suppress(TelegramBadRequest):
                     await bot.delete_message(state.group_chat_id, state.inter_round_message_id)
-                except TelegramBadRequest:
-                    pass
             await callback.answer(
                 "⏹ Partida detenida. Calculando puntuaciones...", show_alert=False
             )
@@ -573,10 +564,8 @@ class RoundManager:
 
     async def _letter_timeout(self, msg, bot, state):
         await asyncio.sleep(15)
-        try:
+        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await msg.delete()
-        except (TelegramBadRequest, TelegramRetryAfter):
-            pass
         letter = random.choice(get_alphabet(state.include_n))
         await self._start_next_round_with_letter(state, letter, bot)
 
@@ -608,13 +597,11 @@ class RoundManager:
 
             # Eliminar el teclado de letras
             if state.letter_message_id:
-                try:
+                with contextlib.suppress(TelegramBadRequest):
                     await bot.delete_message(
                         chat_id=state.letter_message_chat_id,
                         message_id=state.letter_message_id,
                     )
-                except TelegramBadRequest:
-                    pass
 
             await self.start_round(
                 game_id=game_id,
@@ -637,10 +624,8 @@ class RoundManager:
             f"<b>Letra: {letter}</b>\n⏱ Siguiente ronda en 5 segundos...",
         )
         await asyncio.sleep(5)
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await countdown.delete()
-        except TelegramBadRequest:
-            pass
 
     async def _start_next_round_with_letter(
         self,

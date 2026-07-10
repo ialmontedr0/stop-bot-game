@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import functools
 import logging
 import traceback as tb
@@ -231,10 +232,8 @@ class ErrorTracker:
                     if callback:
                         data = getattr(callback, "data", "")
                         if data and ":" in data:
-                            try:
+                            with contextlib.suppress(ValueError, IndexError):
                                 game_id = int(data.split(":")[1])
-                            except (ValueError, IndexError):
-                                pass
                         context["callback_data"] = data
 
                     message = kwargs.get("message")

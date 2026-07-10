@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import random
 from dataclasses import dataclass, field
@@ -68,9 +69,7 @@ class LobbyManager:
         return None
 
     # --- Crear lobby --------------------------------------------------------
-    async def create_lobby(
-        self, group_chat_id: int, host_player: Player, bot: Bot
-    ) -> str | None:
+    async def create_lobby(self, group_chat_id: int, host_player: Player, bot: Bot) -> str | None:
         async with async_session_factory() as session:
             repo = GameRepository(session)
 
@@ -254,10 +253,8 @@ class LobbyManager:
 
         if state:
             self._cleanup(state)
-            try:
+            with contextlib.suppress(TelegramBadRequest):
                 await bot.delete_message(chat_id=state.message_chat_id, message_id=state.message_id)
-            except TelegramBadRequest:
-                pass
         return "✅ Partida cancelada."
 
     # --- Auto-iniciar -------------------------------------------------------
@@ -279,13 +276,11 @@ class LobbyManager:
     async def _expire_timer(self, state: LobbyState, bot: Bot) -> None:
         try:
             await asyncio.sleep(LOBBY_EXPIRE)
-            try:
+            with contextlib.suppress(TelegramBadRequest):
                 await bot.delete_message(
                     chat_id=state.message_chat_id,
                     message_id=state.message_id,
                 )
-            except TelegramBadRequest:
-                pass
 
             async with async_session_factory() as session:
                 repo = GameRepository(session)
@@ -293,13 +288,11 @@ class LobbyManager:
                 if db_game and db_game.status == STATUS_LOBBY:
                     await repo.update_game_status(db_game, STATUS_CANCELLED)
 
-            try:
+            with contextlib.suppress(TelegramBadRequest, TelegramForbiddenError):
                 await bot.send_message(
                     state.group_chat_id,
                     "⌛ <b>Lobby cerrado por inactividad.</b>",
                 )
-            except (TelegramBadRequest, TelegramForbiddenError):
-                pass
 
             self._cleanup(state)
         except asyncio.CancelledError:
@@ -378,12 +371,12 @@ class LobbyManager:
 
         logger.info("Modo validacion para grupo %s: %s", state.group_chat_id, validation_mode)
 
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await bot.delete_message(chat_id=state.message_chat_id, message_id=state.message_id)
-        except TelegramBadRequest:
-            pass
 
-        player_names = dict(zip(state.player_telegram_ids, state.player_display_names))
+        player_names = dict(
+            zip(state.player_telegram_ids, state.player_display_names, strict=False)
+        )
 
         participants = "\n".join(
             f"  {i + 1}. {name}" for i, name in enumerate(state.player_display_names)
@@ -402,14 +395,10 @@ class LobbyManager:
         )
         for i in range(3, 0, -1):
             await asyncio.sleep(1)
-            try:
+            with contextlib.suppress(TelegramBadRequest):
                 await count_msg.edit_text(f"<b>{i}...</b>")
-            except TelegramBadRequest:
-                pass
-        try:
+        with contextlib.suppress(TelegramBadRequest):
             await count_msg.delete()
-        except TelegramBadRequest:
-            pass
         # === Fin countdoun ===
 
         async with async_session_factory() as session:

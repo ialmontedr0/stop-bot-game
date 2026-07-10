@@ -1,3 +1,4 @@
+import contextlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -113,22 +114,20 @@ class TestHealthServer:
             mock_log.debug.assert_called_once()
 
     def test_start_health_server(self):
-        from src.monitoring.health_server import start_health_server, run_health_server_sync
 
         with patch("src.monitoring.health_server.HTTPServer") as mock_server_cls:
             mock_server = MagicMock()
             mock_server_cls.return_value = mock_server
             import asyncio
+
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             coro = start_health_server(port=9999)
             task = loop.create_task(coro)
             loop.call_soon(task.cancel)
             loop.run_until_complete(asyncio.sleep(0.1))
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 loop.run_until_complete(task)
-            except asyncio.CancelledError:
-                pass
             loop.close()
             mock_server_cls.assert_called_once_with(("0.0.0.0", 9999), MetricsHandler)
 

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import signal
 import sys
@@ -135,14 +136,10 @@ async def on_startup() -> None:
 async def _do_shutdown(sig_name: str = "shutdown") -> None:
     logger.info("Ejecutando shutdown graceful (señal: %s)...", sig_name)
 
-    print(f"[SHUTDOWN] Señal {sig_name} recibida, iniciando shutdown...", flush=True)
-
     if dp is not None:
         logger.info("Deteniendo polling...")
-        try:
+        with contextlib.suppress(Exception):
             await dp.stop_polling()
-        except Exception:
-            pass
 
     logger.info("Cancelando partidas activas...")
     try:
@@ -170,7 +167,6 @@ async def _do_shutdown(sig_name: str = "shutdown") -> None:
         _health_server.shutdown()
 
     logger.info("Shutdown completo — señal: %s", sig_name)
-    print(f"[SHUTDOWN] Graceful shutdown completado ({sig_name})", flush=True)
 
 
 async def on_shutdown() -> None:
@@ -179,30 +175,23 @@ async def on_shutdown() -> None:
 
 async def main() -> None:
     global _redis_client, _health_server, dp
-    print("[BOOT] Configurando logging...", flush=True)
     setup_logging()
     logging.getLogger("aiogram").setLevel(logging.INFO)
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
     # === Iniciar health server en thread separado ===
-    print("[BOOT] Iniciando health server en puerto 9090...", flush=True)
     try:
         _health_server = run_health_server_sync(port=9090)
         health_thread = threading.Thread(target=_health_server.serve_forever, daemon=True)
         health_thread.start()
-        print("[BOOT] Health server OK en puerto 9090", flush=True)
-    except Exception as e:
-        print(f"[BOOT] Health server no disponible: {e}", flush=True)
+    except Exception:
+        pass
 
-    print("[BOOT] Conectando a Redis...", flush=True)
     try:
         _redis_client = AsyncRedis.from_url(settings.redis_url)
         await _redis_client.ping()
         redis_connected.set(1)
-        print("[BOOT] Redis OK", flush=True)
-    except Exception as e:
-        print(f"[BOOT] ERROR: Redis no disponible: {e}", flush=True)
-        print("[BOOT] El bot continuara sin Redis (sin FSM persistente)", flush=True)
+    except Exception:
         _redis_client = None
         redis_connected.set(0)
 
@@ -213,13 +202,11 @@ async def main() -> None:
 
         storage = MemoryStorage()
 
-    print("[BOOT] Autenticando con Telegram...", flush=True)
     bot = LoggedBot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    me = await bot.get_me()
-    print(f"[BOOT] Bot autenticado: @{me.username} (ID: {me.id})", flush=True)
+    await bot.get_me()
 
     dp = Dispatcher(storage=storage)
 
@@ -255,11 +242,9 @@ async def main() -> None:
                 sig,
                 lambda s=sig: asyncio.create_task(_do_shutdown(signal.Signals(s).name)),
             )
-        print("[BOOT] Graceful shutdown configurado (SIGTERM/SIGINT)", flush=True)
     else:
-        print("[BOOT] Graceful shutdown: Windows detectado, usando finally", flush=True)
+        pass
 
-    print("[BOOT] Iniciando polling...", flush=True)
     logger.info("Iniciando polling...")
     try:
         await dp.start_polling(bot, skip_updates=False)

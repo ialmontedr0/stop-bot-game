@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -229,10 +230,8 @@ class TestStartRound:
         assert state.timer_task is not None
         assert not state.timer_task.done()
         state.timer_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await state.timer_task
-        except asyncio.CancelledError:
-            pass
         bot.send_message.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -271,15 +270,11 @@ class TestStartRound:
         assert new_state.round_number == 2
         assert new_state.letter == "B"
         old_timer.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await old_timer
-        except asyncio.CancelledError:
-            pass
         new_state.timer_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await new_state.timer_task
-        except asyncio.CancelledError:
-            pass
 
 
 class TestSubmitAnswers:
@@ -311,10 +306,8 @@ class TestSubmitAnswers:
 
         state = fresh_round_manager.get_active_round(1)
         state.timer_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await state.timer_task
-        except asyncio.CancelledError:
-            pass
 
         player = MagicMock(spec=Player)
         player.telegram_id = 111
@@ -362,10 +355,8 @@ class TestPressStop:
 
         state = fresh_round_manager.get_active_round(1)
         state.timer_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await state.timer_task
-        except asyncio.CancelledError:
-            pass
         state.first_completer_id = 111
 
         callback = AsyncMock()
@@ -462,10 +453,8 @@ class TestCloseRound:
             mock_repo_cls.return_value = mock_repo
             await fresh_round_manager._close_round(1, "stop", bot)
 
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await timer
-        except asyncio.CancelledError:
-            pass
         assert timer.cancelled()
 
 
