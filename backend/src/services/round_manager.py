@@ -452,7 +452,7 @@ class RoundManager:
                     break
                 except TelegramRetryAfter as e:
                     if attempt < 2:
-                        await asyncio.sleep(min(e.retry_after, 5))
+                        await asyncio.sleep(e.retry_after)
                     else:
                         logger.warning(
                             "No se pudo enviar resumen tras 3 intentos: game=%s",
