@@ -464,6 +464,12 @@ class RoundManager:
                 self._letter_pending.pop(state.game_id, None)
                 return
             await self._transition_next_round(state, bot)
+        except TelegramRetryAfter as e:
+            logger.warning(
+                "TelegramRetryAfter en _do_close_round_telegram: game=%s, retry_after=%d",
+                state.game_id, e.retry_after,
+            )
+            await asyncio.sleep(e.retry_after)
         except Exception:
             logger.exception(
                 "Erro ren _do_close_round_telegram para game=%s round=%s",
@@ -501,12 +507,19 @@ class RoundManager:
                 return
             except TelegramRetryAfter as e:
                 if attempt < 2:
-                    await asyncio.sleep(min(e.retry_after, 10))
+                    await asyncio.sleep(e.retry_after)
                 else:
                     logger.warning(
                         "No se pudo enviar menu inter-round tras 3 intentos: game=%s",
                         state.game_id,
                     )
+            except Exception:
+                logger.warning(
+                    "Error inesperado en _show_inter_round_menu attempt %d: game=%s",
+                    attempt, state.game_id,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(5)
 
     async def _inter_round_timeout(self, state: RoundState, bot: Bot) -> None:
         await asyncio.sleep(120)
