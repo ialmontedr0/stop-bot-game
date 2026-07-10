@@ -233,7 +233,7 @@ class SpellCorrector:
                     rep_j = next(iter(cluster_list[j]))
                     norm_j = next(n for p, _, n in valid if p == rep_j)
                     ratio = fuzz.token_sort_ratio(norm_i, norm_j)
-                    if ratio >= self.fuzzy_threshold:
+                    if ratio >= 85:
                         cl |= cluster_list[j]
                         used[j] = True
                         merged = True
