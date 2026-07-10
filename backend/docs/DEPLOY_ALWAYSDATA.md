@@ -208,26 +208,23 @@ Si todo sale bien, verás mensajes como `INFO  [alembic.runtime.migration] Runni
 
 ---
 
-## Paso 8 — Configurar el proceso persistente en Alwaysdata
+## Paso 8 — Programar tarea cada minuto (alternativa gratuita a proceso persistente)
 
-1. Vuelve al panel de Alwaysdata en tu navegador: [admin.alwaysdata.com](https://admin.alwaysdata.com).
-2. Ve a **Sites** y haz clic en el sitio `ialmontedr0` (o el nombre que le pusiste).
-3. Dentro de la configuración del sitio, busca la sección **Advanced** (o **Advanced configuration**).
-4. En el campo **Run** (o **Command to run**), pega exactamente esto:
+El plan gratuito de Alwaysdata **no** permite procesos 24/7. Para mantener el bot vivo usaremos una **tarea programada** (cron) que se ejecuta cada minuto. Con `flock` nos aseguramos de que solo haya una instancia del bot corriendo; si el bot se cae, el cron lo reinicia en ≤1 minuto.
 
-```
-/home/ialmontedr0/python/stop-bot-game/venv/bin/python /home/ialmontedr0/python/stop-bot-game/backend/src/bot.py
-```
+1. En el panel de Alwaysdata, ve a **Advanced → Scheduled tasks** (menú lateral izquierdo).
+2. Haz clic en **Add a scheduled task**.
+3. Completa los campos:
+   - **Command**:
+     ```
+     flock -n /home/ialmontedr0/python/stop-bot-game/backend/stopbot.lock /home/ialmontedr0/python/stop-bot-game/backend/venv/bin/python -m src.bot
+     ```
+   - **Working directory**: `/home/ialmontedr0/python/stop-bot-game/backend`
+   - **Frequency**: `* * * * *` (cada minuto)
+   - **Environment**: déjalo vacío (el `.env` lo lee el bot)
+4. Haz clic en **Add** o **Save**.
 
-5. **Working directory** debe decir:
-
-```
-/home/ialmontedr0/python/stop-bot-game/backend
-```
-
-6. En **Environment variables**, si no usaste el `.env` (pero sí lo creaste en el Paso 6, así que puedes dejarlo vacío). Opcionalmente puedes poner aquí las variables también.
-
-7. Haz clic en **Save** o **Submit** en la parte inferior.
+> **Cómo funciona**: cada minuto el cron intenta ejecutar el bot. `flock -n` adquiere un lock en el archivo `stopbot.lock`. Si el bot ya está corriendo, el lock está ocupado y la nueva ejecución se descarta. Si el bot se detiene (crashea o termina), el lock se libera y en el próximo minuto el cron lo reinicia.
 
 ---
 

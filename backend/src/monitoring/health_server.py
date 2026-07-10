@@ -53,5 +53,4 @@ async def start_health_server(port: int = _HEALTH_PORT) -> HTTPServer:
 def run_health_server_sync(port: int = _HEALTH_PORT) -> HTTPServer:
     server = HTTPServer(("0.0.0.0", port), MetricsHandler)
     logger.info("Health server iniciado en puerto %s", port)
-    server.serve_forever()
     return server
