@@ -485,17 +485,28 @@ class RoundManager:
         await self._show_inter_round_menu(state, bot)
 
     async def _show_inter_round_menu(self, state: RoundState, bot: Bot) -> None:
-        msg = await bot.send_message(
-            state.group_chat_id,
-            f"🔄 <b>Ronda {state.round_number} completada</b>\n\n"
-            f"⏱ La siguiente ronda comenzará automáticamente en 2 minutos.\n\n"
-            f"<b>Opciones:</b>\n"
-            f"  ▶️ <i>Siguiente ronda</i> — solo el líder puede avanzar\n"
-            f"  ⏹ <i>Detener partida</i> — solo el anfitrión puede finalizar",
-            reply_markup=inter_round_keyboard(state.game_id),
-        )
-        state.inter_round_message_id = msg.message_id
-        state.inter_round_timeout_task = asyncio.create_task(self._inter_round_timeout(state, bot))
+        for attempt in range(3):
+            try:
+                msg = await bot.send_message(
+                    state.group_chat_id,
+                    f"🔄 <b>Ronda {state.round_number} completada</b>\n\n"
+                    f"⏱ La siguiente ronda comenzará automáticamente en 2 minutos.\n\n"
+                    f"<b>Opciones:</b>\n"
+                    f"  ▶️ <i>Siguiente ronda</i> — solo el líder puede avanzar\n"
+                    f"  ⏹ <i>Detener partida</i> — solo el anfitrión puede finalizar",
+                    reply_markup=inter_round_keyboard(state.game_id),
+                )
+                state.inter_round_message_id = msg.message_id
+                state.inter_round_timeout_task = asyncio.create_task(self._inter_round_timeout(state, bot))
+                return
+            except TelegramRetryAfter as e:
+                if attempt < 2:
+                    await asyncio.sleep(min(e.retry_after, 10))
+                else:
+                    logger.warning(
+                        "No se pudo enviar menu inter-round tras 3 intentos: game=%s",
+                        state.game_id,
+                    )
 
     async def _inter_round_timeout(self, state: RoundState, bot: Bot) -> None:
         await asyncio.sleep(120)
