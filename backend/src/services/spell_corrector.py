@@ -4,6 +4,9 @@ import asyncio
 import logging
 import re
 
+import httpx
+from cachetools import TTLCache
+
 from src.core.text_utils import normalize_text
 from src.db.models import Answer
 
@@ -77,6 +80,8 @@ class SpellCorrector:
         self._word_lists: dict[str, set[str]] = {
             cat: set(words) for cat, words in SEED_WORDS.items()
         }
+        self._mem_cache: TTLCache = TTLCache(maxsize=2000, ttl=3600)
+        self._http_client: httpx.AsyncClient | None = None
         self._pending_tasks: set[asyncio.Task] = set()
 
     def _track_task(self, task: asyncio.Task) -> asyncio.Task:
@@ -115,12 +120,23 @@ class SpellCorrector:
         if self._redis is not None:
             await self._redis.close()
             self._redis = None
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
 
     async def _get_redis(self):
         if self._redis is None and self._redis_url:
-            from redis.asyncio import Redis as AsyncRedis
+            try:
+                from redis.asyncio import Redis as AsyncRedis
 
-            self._redis = AsyncRedis.from_url(self._redis_url)
+                self._redis = AsyncRedis.from_url(
+                    self._redis_url,
+                    connection_kwargs={"socket_connect_timeout": 2},
+                )
+                await self._redis.ping()
+            except Exception:
+                logger.warning("Redis no disponible, usando cache en memoria")
+                self._redis = None
         return self._redis
 
     # --- Normalizacion --------------------------------------------------------------
@@ -272,7 +288,15 @@ class SpellCorrector:
 
         # 3 - AI correccion (solo en modo AI o hybryd)
         if effective_mode in (self.MODE_AI, self.MODE_HYBRID) and self.api_calls_remaining > 0:
-            # Check Redis cache
+            mem_cache_key = f"correct:{norm}:{cat_lower}"
+            mem_cached = self._mem_cache.get(mem_cache_key)
+            if mem_cached is not None:
+                cat_words.add(mem_cached)
+                self._track_task(
+                    asyncio.create_task(self.add_to_word_list_persistent(mem_cached, category))
+                )
+                return mem_cached
+
             redis = await self._get_redis()
             cache_key = f"spell:correct:{norm}:{cat_lower}"
             if redis:
@@ -294,7 +318,7 @@ class SpellCorrector:
                 self._track_task(
                     asyncio.create_task(self.add_to_word_list_persistent(corrected_norm, category))
                 )
-                # Cachear en Redis (1 hora)
+                self._mem_cache[mem_cache_key] = corrected_norm
                 if redis:
                     await redis.setex(cache_key, 3600, corrected_norm)
                 return corrected_norm
@@ -361,25 +385,24 @@ class SpellCorrector:
                 "max_tokens": 20,
             }
 
-            timeout = 15 if is_gemini else 10
+            if self._http_client is None:
+                self._http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
 
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    f"{self.api_url.rstrip('/')}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"].get("content")
-                if content is None:
-                    return None
-                corrected = content.strip()
-                # Limpiar posibles caracteres extra
-                corrected = re.sub(r"[^\w\s\-áéíóúüñÁÉÍÓÚÜÑ]", "", corrected)
-                if corrected and len(corrected) < 100:
-                    return corrected
+            resp = await self._http_client.post(
+                f"{self.api_url.rstrip('/')}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["choices"][0]["message"].get("content")
+            if content is None:
                 return None
+            corrected = content.strip()
+            corrected = re.sub(r"[^\w\s\-áéíóúüñÁÉÍÓÚÜÑ]", "", corrected)
+            if corrected and len(corrected) < 100:
+                return corrected
+            return None
         except httpx.TimeoutException:
             logger.warning("Timeout en AI correction para '%s'", word)
             self._api_failed += 1
@@ -431,6 +454,18 @@ class SpellCorrector:
 
         # 3 - AI validation
         if effective_mode in (self.MODE_AI, self.MODE_HYBRID) and self.api_calls_remaining > 0:
+            mem_cache_key = f"validate:{norm}:{cat_lower}"
+            mem_cached = self._mem_cache.get(mem_cache_key)
+            if mem_cached is not None:
+                val = mem_cached
+                if val == "true":
+                    cat_words.add(norm)
+                    self._track_task(
+                        asyncio.create_task(self.add_to_word_list_persistent(norm, category))
+                    )
+                self._validation_source[f"{cat_lower}:{norm}"] = "mem_cache"
+                return val == "true"
+
             redis = await self._get_redis()
             cache_key = f"spell:validate:{norm}:{cat_lower}"
             if redis:
@@ -448,6 +483,7 @@ class SpellCorrector:
             result = await self._ai_validate(word, category)
             if result is not None:
                 self._api_calls += 1
+                self._mem_cache[mem_cache_key] = str(result).lower()
                 if redis:
                     await redis.setex(cache_key, 3600, str(result).lower())
                 if result:
@@ -524,21 +560,20 @@ class SpellCorrector:
                 "max_tokens": 5,
             }
 
-            timeout = 15 if is_gemini else 10
-
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    f"{self.api_url.rstrip('/')}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"].get("content")
-                if content is None:
-                    return None
-                answer = content.strip().lower()
-                return answer.strip() in ("si", "sí")
+            if self._http_client is None:
+                self._http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+            resp = await self._http_client.post(
+                f"{self.api_url.rstrip('/')}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["choices"][0]["message"].get("content")
+            if content is None:
+                return None
+            answer = content.strip().lower()
+            return answer.strip() in ("si", "sí")
         except httpx.TimeoutException:
             logger.warning("Timeout en AI validation para '%s' en %s", word, category)
             return None

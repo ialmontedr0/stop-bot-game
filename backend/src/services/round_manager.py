@@ -222,17 +222,26 @@ class RoundManager:
 
         corrector = get_corrector()
         if state.validation_mode in ("ai", "hybrid"):
-            for slot, raw_text in list(parsed.items()):
+            async def _validate_slot(slot: str, raw_text: str) -> tuple[str, str, bool]:
                 if raw_text and raw_text.strip():
                     is_valid = await corrector.validate(raw_text, slot, mode=state.validation_mode)
-                    if not is_valid:
-                        parsed[slot] = ""
-                        logger.info(
-                            "Respuesta rechazada por IA: %s=%s (player=%s)",
-                            slot,
-                            raw_text,
-                            player.id,
-                        )
+                    return slot, raw_text, is_valid
+                return slot, raw_text, True
+
+            tasks = [
+                _validate_slot(slot, raw_text)
+                for slot, raw_text in list(parsed.items())
+            ]
+            results = await asyncio.gather(*tasks)
+            for slot, raw_text, is_valid in results:
+                if not is_valid:
+                    parsed[slot] = ""
+                    logger.info(
+                        "Respuesta rechazada por IA: %s=%s (player=%s)",
+                        slot,
+                        raw_text,
+                        player.id,
+                    )
 
         try:
             async with async_session_factory() as session:
