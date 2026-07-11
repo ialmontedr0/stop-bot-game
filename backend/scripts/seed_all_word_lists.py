@@ -20,7 +20,7 @@ from src.db.repositories.word_list_repository import WordListRepository
 
 # Importar listas completas
 from .word_list_data import COLORS, COUNTRIES, FRUITS
-from .word_list_data_full import ARTISTS, NAMES, NOVELS_SERIES, SURNAMES, THINGS
+from .word_list_data_full import ANIMALS, ARTISTS, NAMES, SURNAMES, THINGS
 
 ALL_CATEGORIES: dict[str, list[str]] = {
     "color": COLORS,
@@ -29,7 +29,7 @@ ALL_CATEGORIES: dict[str, list[str]] = {
     "nombre": NAMES,
     "apellido": SURNAMES,
     "artista": ARTISTS,
-    "novela/serie": NOVELS_SERIES,
+    "animal": ANIMALS,
     "cosa": THINGS,
 }
 

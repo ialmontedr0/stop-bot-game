@@ -284,7 +284,7 @@ class TestSeedWords:
             "fruta",
             "pais",
             "artista",
-            "novela/serie",
+            "animal",
             "cosa",
         }
         assert set(SEED_WORDS.keys()) == expected
@@ -297,7 +297,7 @@ class TestSeedWords:
             "nombre",
             "apellido",
             "artista",
-            "novela/serie",
+            "animal",
             "cosa",
         }
         for cat, words in SEED_WORDS.items():

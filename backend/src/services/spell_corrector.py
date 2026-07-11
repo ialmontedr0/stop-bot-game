@@ -23,7 +23,7 @@ SEED_WORDS: dict[str, set[str]] = {
     "fruta": set(),
     "pais": set(),
     "artista": set(),
-    "novela/serie": set(),
+    "animal": set(),
     "cosa": set(),
 }
 
@@ -47,7 +47,7 @@ class SpellCorrector:
         "nombre",
         "apellido",
         "artista",
-        "novela/serie",
+        "animal",
         "cosa",
     }
     PROVIDER_OPENAI = "openai"

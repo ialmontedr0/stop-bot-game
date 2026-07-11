@@ -37,7 +37,7 @@ CATEGORIES = [
     "Fruta",
     "País",
     "Artista",
-    "Novela/Serie",
+    "Animal",
     "Cosa",
 ]
 
@@ -1105,7 +1105,7 @@ def _unaccent(s: str) -> str:
 
 
 def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
-    # Mapa sin acentos: "pais" → "País", "novela/serie" → "Novela/Serie", ...
+    # Mapa sin acentos: "pais" → "País", "animal" → "Animal", ...
     cat_map: dict[str, str] = {}
     for cat in categories:
         cat_map[_unaccent(cat.lower())] = cat

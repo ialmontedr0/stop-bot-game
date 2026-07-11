@@ -7,7 +7,7 @@ ALL_CATEGORIES = [
     "Fruta",
     "País",
     "Artista",
-    "Novela/Serie",
+    "Animal",
     "Cosa",
 ]
 
