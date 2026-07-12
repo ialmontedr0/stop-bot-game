@@ -355,7 +355,7 @@ class LobbyManager:
 
         # --- Leer validation_mode del grupo ----------------
         group_config = await self._get_group_config(state.group_chat_id)
-        validation_mode = group_config.validation_mode if group_config else "local"
+        validation_mode = group_config.validation_mode or "local" if group_config else "local"
 
         # --- Leer configuracion de partida -----------------
 

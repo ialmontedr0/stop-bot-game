@@ -224,11 +224,12 @@ class RoundManager:
         from src.services.spell_corrector import get_corrector
 
         corrector = get_corrector()
-        if state.validation_mode in ("ai", "hybrid"):
+        effective_validation_mode = state.validation_mode or corrector.mode
+        if effective_validation_mode in ("ai", "hybrid"):
 
             async def _validate_slot(slot: str, raw_text: str) -> tuple[str, str, bool]:
                 if raw_text and raw_text.strip():
-                    is_valid = await corrector.validate(raw_text, slot, mode=state.validation_mode)
+                    is_valid = await corrector.validate(raw_text, slot, mode=effective_validation_mode)
                     return slot, raw_text, is_valid
                 return slot, raw_text, True
 
