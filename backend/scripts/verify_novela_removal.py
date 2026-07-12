@@ -1,25 +1,28 @@
 """
-Verifica que no queden residuos de "Novela/Serie" en código ni BD.
+Verifica que no queden residuos de "Novela/Serie" en codigo ni BD.
 
-Uso: python -m scripts.verify_novela_removal
+Uso:
+    python -m scripts.verify_novela_removal
 """
 
+import asyncio
 import os
-import sys
 import re
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+THIS_FILE = os.path.basename(__file__)
 
 errors: list[str] = []
 
 print("=" * 60)
-print("🔍 Verificación de eliminación de Novela/Serie")
+print("Verificacion de eliminacion de Novela/Serie")
 print("=" * 60)
 
-# ── 1. Buscar en código fuente ──
-print("\n📁 1. Buscando en código fuente (.py)...")
+# ── 1. Buscar en codigo fuente ──
+print("\n[1/4] Buscando en codigo fuente (.py)...")
 source_dirs = [
     os.path.join(ROOT, "src"),
     os.path.join(ROOT, "scripts"),
@@ -33,42 +36,23 @@ for sd in source_dirs:
         for fn in filenames:
             if not fn.endswith(".py"):
                 continue
+            # Ignorar este mismo script
+            if fn == THIS_FILE and dirpath == os.path.join(ROOT, "scripts"):
+                continue
             fp = os.path.join(dirpath, fn)
             with open(fp, "r", encoding="utf-8", errors="replace") as f:
                 for lineno, line in enumerate(f, 1):
                     if re.search(r"[Nn]ovela[/][Ss]erie", line):
                         rel = os.path.relpath(fp, ROOT)
-                        print(f"   ❌ {rel}:{lineno}: {line.strip()}")
-                        errors.append(f"Código: {rel}:{lineno}")
+                        print("   ❌ {}:{}: {}".format(rel, lineno, line.strip()))
+                        errors.append("Codigo: {}:{}".format(rel, lineno))
                         found_in_code += 1
 
 if found_in_code == 0:
-    print("   ✅ No se encontró 'Novela/Serie' en ningún .py")
+    print("   ✅ No se encontro Novela/Serie en ningun .py (excluyendo este script)")
 
-# ── 2. Buscar en archivos .md de phases ──
-print("\n📁 2. Buscando en archivos .md...")
-phases_dir = os.path.join(os.path.dirname(ROOT), "phases")
-found_in_md = 0
-if os.path.isdir(phases_dir):
-    for fn in os.listdir(phases_dir):
-        if not fn.endswith(".md"):
-            continue
-        fp = os.path.join(phases_dir, fn)
-        with open(fp, "r", encoding="utf-8", errors="replace") as f:
-            for lineno, line in enumerate(f, 1):
-                if re.search(r"[Nn]ovela[/][Ss]erie", line):
-                    print(f"   ⚠️  {fn}:{lineno}: {line.strip()}")
-                    found_in_md += 1
-    if found_in_md == 0:
-        print("   ✅ No se encontró en .md")
-    else:
-        print(f"   ⚠️  {found_in_md} menciones en docs (opcional, no afecta al bot)")
-else:
-    print("   ⏭️  No hay carpeta phases/ (solo local)")
-
-# ── 3. Buscar en __pycache__ archivos .pyc compilados ──
-print("\n📁 3. Buscando en bytecode compilado (.pyc en __pycache__)...")
-import compileall
+# ── 2. Buscar en __pycache__ ──
+print("\n[2/4] Buscando en bytecode compilado (.pyc)...")
 pycache_found = 0
 for dirpath, dirnames, filenames in os.walk(ROOT):
     if "__pycache__" in dirpath:
@@ -79,56 +63,68 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
                     content = f.read()
                     if b"Novela" in content or b"novela" in content:
                         rel = os.path.relpath(fp, ROOT)
-                        print(f"   ⚠️  {rel} contiene residuos de Novela")
+                        print("   ⚠️  {} tiene residuos".format(rel))
                         pycache_found += 1
 
 if pycache_found == 0:
     print("   ✅ No hay .pyc con residuos")
+else:
+    print("   Solucion: find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null")
 
-# ── 4. Conectar a BD local y verificar ──
-print("\n🗄️  4. Verificando base de datos local...")
+# ── 3. Verificar BD ──
+print("\n[3/4] Verificando base de datos...")
 try:
-    from src.db.engine import async_session_factory
     from sqlalchemy import text
-    import asyncio
+    from src.db.engine import async_session_factory
 
     async def check_db():
         global errors
         async with async_session_factory() as session:
-            for table, column, search in [
-                ("word_list_items", "category", "'novela/serie'"),
-                ("word_list_items", "category", "'Novela/Serie'"),
-                ("answers", "word_slot", "'Novela/Serie'"),
-                ("group_configs", "categories", "'%Novela/Serie%'"),
-            ]:
-                sql = text(f"SELECT COUNT(*) FROM {table} WHERE {column} LIKE {search}")
-                result = await session.execute(sql)
+            checks = [
+                ("word_list_items", "category", "novela/serie"),
+                ("answers", "word_slot", "Novela/Serie"),
+                ("group_configs", "categories", "%Novela/Serie%"),
+            ]
+            for table, column, search in checks:
+                sql = text(
+                    "SELECT COUNT(*) FROM {} WHERE {} LIKE :s".format(table, column)
+                )
+                result = await session.execute(sql, {"s": search})
                 count = result.scalar()
                 if count > 0:
-                    print(f"   ❌ {table}.{column} tiene {count} registro(s) con Novela/Serie")
-                    errors.append(f"BD: {table}.{column} = {count}")
+                    print(
+                        "   ❌ {}.{} tiene {} registro(s)".format(table, column, count)
+                    )
+                    errors.append("BD: {}.{} = {}".format(table, column, count))
                 else:
-                    print(f"   ✅ {table}.{column} → 0 registros")
-
-            for table, column in [
-                ("word_list_items", "category"),
-                ("answers", "word_slot"),
-            ]:
-                sql = text(f"SELECT DISTINCT {column} FROM {table} ORDER BY {column}")
-                result = await session.execute(sql)
-                values = [row[0] for row in result]
-                print(f"   ℹ️  Valores únicos en {table}.{column}: {values}")
+                    print("   ✅ {}.{} → 0 registros".format(table, column))
 
     asyncio.run(check_db())
+except ModuleNotFoundError as e:
+    print("   ⚠️  No se pudo conectar a BD: {}".format(e))
 except Exception as e:
-    print(f"   ⚠️  No se pudo conectar a BD local: {e}")
+    print("   ⚠️  Error de BD: {}".format(e))
+
+# ── 4. Verificar ALL_CATEGORIES ──
+print("\n[4/4] Verificando ALL_CATEGORIES en settings.py...")
+settings_path = os.path.join(ROOT, "src", "keyboards", "settings.py")
+if os.path.exists(settings_path):
+    with open(settings_path, "r") as f:
+        content = f.read()
+        if "Novela/Serie" in content:
+            print("   ❌ settings.py aun tiene Novela/Serie!")
+            errors.append("settings.py contiene Novela/Serie")
+        elif "Animal" in content:
+            print('   ✅ ALL_CATEGORIES tiene "Animal"')
+else:
+    print("   ⚠️  No se encontro settings.py")
 
 # ── Resumen ──
 print("\n" + "=" * 60)
 if errors:
-    print(f"❌ Se encontraron {len(errors)} problema(s):")
+    print("❌ Se encontraron {} problema(s):".format(len(errors)))
     for e in errors:
-        print(f"   - {e}")
+        print("   - {}".format(e))
 else:
-    print("✅  TODO LIMPIO — No hay rastros de Novela/Serie en código ni BD local")
+    print("✅  TODO LIMPIO — No hay rastros de Novela/Serie en codigo ni BD")
 print("=" * 60)
