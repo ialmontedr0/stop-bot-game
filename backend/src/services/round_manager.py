@@ -405,6 +405,12 @@ class RoundManager:
                     state.game_id,
                     state.round_number,
                 )
+        # Asegurar que todas las palabras aprendidas se persistan antes de continuar
+        try:
+            from src.services.spell_corrector import get_corrector
+            await get_corrector().flush_pending_tasks()
+        except Exception:
+            logger.exception("Error en flush_pending_tasks")
         try:
             if round_scores:
                 unique_scores = len(set(round_scores.values()))

@@ -89,6 +89,11 @@ class SpellCorrector:
         task.add_done_callback(self._pending_tasks.discard)
         return task
 
+    async def flush_pending_tasks(self) -> None:
+        """Espera a que todas las tareas de persistencia pendientes terminen."""
+        if self._pending_tasks:
+            await asyncio.gather(*self._pending_tasks, return_exceptions=True)
+
     def _default_model(self) -> str:
         return "gemini-2.0-flash" if self.ai_provider == self.PROVIDER_GEMINI else "gpt-4o-mini"
 
@@ -492,9 +497,11 @@ class SpellCorrector:
                         asyncio.create_task(self.add_to_word_list_persistent(norm, category))
                     )
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai"
+                    return True
                 else:
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai_rejected"
-                return result
+                    # AI rechazó, pero igual caemos a default permisivo
+                    # para evitar falsos negativos del modelo
             else:
                 self._api_failed += 1
 
@@ -529,28 +536,27 @@ class SpellCorrector:
 
             model = self.ai_model
             is_gemini = self.ai_provider == self.PROVIDER_GEMINI
+            system_prompt = (
+                "Eres un asistente de un juego de Stop. "
+                "Responde solo 'si' o 'no' a si la palabra "
+                "pertenece a la categoria indicada.\n\n"
+                "Importante: Se inclusivo. Acepta diminutivos, apodos, "
+                "variaciones regionales y palabras poco comunes. "
+                "En caso de duda responde 'si'."
+            )
             if is_gemini:
                 messages = [
                     {
                         "role": "user",
                         "content": (
-                            "Eres un asistente de un juego de Stop. "
-                            "Responde solo 'si' o 'no' a si la palabra "
-                            "pertenece a la categoria indicada.\n\n"
+                            f"{system_prompt}\n\n"
                             f"Categoria:'{category}'\nPalabra: '{word}'"
                         ),
                     }
                 ]
             else:
                 messages = [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Eres un asistente de un juego de Stop. "
-                            "Responde solo 'si' o 'no' a si la palabra "
-                            "pertenece a la categoria indicada."
-                        ),
-                    },
+                    {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
                         "content": f"Categoria:'{category}'\nPalabra: '{word}'",
