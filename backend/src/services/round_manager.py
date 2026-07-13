@@ -225,17 +225,11 @@ class RoundManager:
 
         corrector = get_corrector()
         effective_validation_mode = state.validation_mode or corrector.mode
-        logger.info(
-            "submit_answers: validation_mode=%s effective=%s categories=%s parsed=%s",
-            state.validation_mode, effective_validation_mode, state.categories, parsed,
-        )
         if effective_validation_mode in ("ai", "hybrid"):
 
             async def _validate_slot(slot: str, raw_text: str) -> tuple[str, str, bool]:
                 if raw_text and raw_text.strip():
-                    logger.info("Validando slot=%s raw=%s mode=%s", slot, raw_text, effective_validation_mode)
                     is_valid = await corrector.validate(raw_text, slot, mode=effective_validation_mode)
-                    logger.info("Resultado validate slot=%s raw=%s is_valid=%s", slot, raw_text, is_valid)
                     return slot, raw_text, is_valid
                 return slot, raw_text, True
 
@@ -245,7 +239,7 @@ class RoundManager:
                 if not is_valid:
                     parsed[slot] = ""
                     logger.info(
-                        "Respuesta rechazada: %s=%s (player=%s)",
+                        "Respuesta rechazada por IA: %s=%s (player=%s)",
                         slot,
                         raw_text,
                         player.id,
@@ -692,6 +686,7 @@ class RoundManager:
                 round_time=state.round_time,
                 categories=state.categories,
                 include_n=state.include_n,
+                validation_mode=state.validation_mode,
             )
 
         # Countdown fuera del lock (solo envio de mensajes)
@@ -722,6 +717,7 @@ class RoundManager:
             round_time=prev_state.round_time,
             categories=prev_state.categories,
             include_n=prev_state.include_n,
+            validation_mode=prev_state.validation_mode,
         )
 
     async def _start_next_round_with_random(self, state, bot):
