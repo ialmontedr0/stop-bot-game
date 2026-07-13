@@ -983,3 +983,153 @@ La Fase 4D se considera completa cuando:
 | `scripts/smoke_test_telegram.py` | CREAR (opcional — smoke test automatizado) |
 
 **Nota:** Los scripts `inject_test_error.py` y `smoke_test_telegram.py` son herramientas auxiliares para pruebas. No son necesarios para el funcionamiento del bot, pero facilitan la verificación de la Fase 4D.
+
+---
+
+## Apéndice A — Mejoras posteriores al smoke test
+
+### A.1 Tratamiento de `...` como respuesta vacía
+
+**Problema detectado:** Cuando un usuario envía respuestas con `...` (ej: `Nombre: ...`), `parse_answers` captura `...` como un valor válido porque es truthy. Aunque scoring le asigna 0 puntos (el regex `^[a-zA-Z...]` lo rechaza), el código que verifica si todas las categorías están completas (`all_filled = len(parsed) == len(state.categories)`) lo cuenta como categoría rellena. Esto permite que el usuario reciba el botón Stop injustamente, ya que el bot piensa que completó todas las categorías.
+
+**Solución:** Filtrar valores `...` (y variantes como `…`, `. . .`, `..`) después del parseo, normalizándolos a cadena vacía. El slot existe pero queda vacío, por lo que `all_filled` se evalúa correctamente y scoring da 0 puntos.
+
+**Archivo modificado:** `backend/src/services/round_manager.py`
+
+```python
+# En submit_answers, justo después de parsed = parse_answers(...)
+_EMPTY_SYMBOLS = frozenset({"...", "…", ". . .", ".."})
+for slot in list(parsed.keys()):
+    val = parsed[slot].strip().strip("., •-")
+    if not val or val.lower() in _EMPTY_SYMBOLS:
+        parsed[slot] = ""
+```
+
+**Flujo actualizado:**
+
+1. Usuario escribe `Nombre: ...`, otras 7 categorías con palabras reales
+2. `parse_answers` devuelve `{"Nombre": "...", "Apellido": "García", ...}` (8 items)
+3. Loop de filtrado detecta `...`, setea `parsed["Nombre"] = ""`
+4. `all_filled = len(parsed) == len(categories)` → 8 == 8 → True (el slot existe pero está vacío)
+5. En `save_answers`, el slot vacío se guarda con `raw_text = ""`
+6. Scoring: `_is_valid_word("")` → False → 0 puntos
+
+**Comportamiento correcto logrado:**
+
+- `...` no da puntos (ya ocurría)
+- `...` no activa el botón Stop (nuevo)
+- El jugador no es "first completer" si tiene `...` en alguna categoría (nuevo)
+- Si un jugador completa 7/8 + `...`, otro que complete 8/8 recibirá el Stop (corregido)
+
+### A.2 Leaderboard por grupo
+
+**Problema detectado:** El modelo `WeeklyLeaderboard` no tenía columna `group_chat_id`. Las consultas SQL en `get_weekly_top` y `get_player_rank_by_telegram` no filtraban por grupo, mostrando el mismo ranking global sin importar desde qué grupo se ejecutara `/leaderboard`.
+
+**Solución completa — 4 capas modificadas:**
+
+#### A.2.1 Modelo (`backend/src/db/models.py`)
+
+Se agregó `group_chat_id` como `BigInteger` (default 0) y se cambió la unique constraint a `(player_id, week_start, group_chat_id)`:
+
+```python
+class WeeklyLeaderboard(Base):
+    __tablename__ = "weekly_leaderboards"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id", "week_start", "group_chat_id",
+            name="uq_player_week_group"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
+    group_chat_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    week_start: Mapped[date] = mapped_column(default=lambda: date.today())
+    total_score: Mapped[int] = mapped_column(default=0)
+    games_played: Mapped[int] = mapped_column(default=0)
+    rank: Mapped[int | None] = mapped_column(nullable=True)
+```
+
+#### A.2.2 Migración Alembic
+
+Se creó una migración que agrega la columna y actualiza la unique constraint:
+
+```python
+def upgrade() -> None:
+    op.add_column(
+        "weekly_leaderboards",
+        sa.Column("group_chat_id", sa.BigInteger(), nullable=False, server_default="0"),
+    )
+    op.drop_constraint("uq_player_week", "weekly_leaderboards", type_="unique")
+    op.create_unique_constraint(
+        "uq_player_week_group", "weekly_leaderboards",
+        ["player_id", "week_start", "group_chat_id"],
+    )
+```
+
+#### A.2.3 Repositorio (`backend/src/db/repositories/leaderboard_repository.py`)
+
+Todos los métodos ahora aceptan y filtran por `group_chat_id`:
+
+| Método | Cambio |
+|--------|--------|
+| `upsert_player_week` | Nuevo parámetro `group_chat_id: int = 0`; la query WHERE incluye `.group_chat_id == group_chat_id` |
+| `get_weekly_top` (nuevo) | Método dedicado que filtra por `group_chat_id` y `week_start`, ordena por `total_score DESC` con `LIMIT` |
+| `recalculate_ranks` | Nuevo parámetro `group_chat_id: int \| None = None`; si no es None, filtra por grupo |
+| `close_week` | Llama a `recalculate_ranks(group_chat_id=None)` para cerrar todos los grupos |
+
+#### A.2.4 Servicio (`backend/src/services/leaderboard.py`)
+
+- `get_weekly_top(group_chat_id, limit=10)` — pasa `group_chat_id` al repositorio, hace una segunda query para obtener `Player` names
+- `get_player_rank_by_telegram(telegram_id, group_chat_id)` — filtra por `group_chat_id`
+- `upsert_player(player_id, score_to_add, group_chat_id=0)` — pasa `group_chat_id` al repositorio
+
+#### A.2.5 Handler (`backend/src/handlers/game/leaderboard.py`)
+
+- `cmd_leaderboard`: verifica `message.chat.type != "private"`, obtiene `group_chat_id = message.chat.id`, lo pasa a `get_weekly_top`
+- `cmd_rank`: misma verificación de chat type, pasa `group_chat_id` a `get_player_rank_by_telegram`
+
+#### A.2.6 Punto de llamada (`backend/src/services/round_manager.py`)
+
+```python
+# Al finalizar partida (~línea 768)
+await leaderboard_service.upsert_player(
+    player_id=player.id,
+    score_to_add=score,
+    group_chat_id=state.group_chat_id,
+)
+
+# Recalcular ranks
+await LeaderboardRepository.recalculate_ranks(
+    group_chat_id=state.group_chat_id,
+)
+```
+
+#### A.2.7 Tests actualizados
+
+**`tests/test_leaderboard_repository.py`:**
+- `test_creates_new_entry` — verifica que la query contiene `group_chat_id`
+- `test_creates_new_entry_with_group` (nuevo) — pasa `group_chat_id=-100123`, verifica que se usa en la query
+- `test_recalculates_ranks_per_group` (nuevo) — pasa `group_chat_id=-100456`, verifica filtro
+
+**`tests/test_handlers_integration.py`:**
+- `TestCmdLeaderboard::test_private_chat_rejected` (nuevo) — verifica que en DM no se ejecuta
+- `TestCmdLeaderboard::test_passes_group_chat_id` (nuevo) — verifica que `get_weekly_top` recibe `group_chat_id=-100123456789`
+- `TestCmdRank::test_private_chat_rejected` (nuevo) — verifica que en DM no consulta servicio
+
+#### A.2.8 Diseño de datos
+
+```
+weekly_leaderboards
+├── id               PK
+├── player_id        FK → players.id
+├── group_chat_id    BigInteger (default=0)
+├── week_start       Date
+├── total_score      Integer
+├── games_played     Integer
+├── rank             Integer | NULL
+└── UNIQUE(player_id, week_start, group_chat_id)
+```
+
+Cada jugador puede tener múltiples entradas por semana (una por grupo donde juegue). Los ranks se calculan por grupo, no globalmente. El campo `group_chat_id=0` sirve como valor por defecto para datos legacy antes de la migración.
