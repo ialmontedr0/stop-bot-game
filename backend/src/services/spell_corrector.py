@@ -507,6 +507,9 @@ class SpellCorrector:
 
         # 4 - Default permisivo (API agotada o modo local)
         cat_words.add(norm)
+        logger.info(
+            "Persistiendo palabra por default: %s -> %s", norm, cat_lower
+        )
         self._track_task(
             asyncio.create_task(self.add_to_word_list_persistent(norm, category))
         )
