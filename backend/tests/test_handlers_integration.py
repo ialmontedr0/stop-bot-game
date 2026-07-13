@@ -572,6 +572,16 @@ class TestCmdLeaderboard:
             args = status_msg.edit_text.await_args[0][0]
             assert "Aún no hay datos" in args
 
+    async def test_private_chat_rejected(self, mock_message):
+        mock_message.chat.type = "private"
+        mock_message.reply = AsyncMock()
+        from src.handlers.game.leaderboard import cmd_leaderboard
+
+        await cmd_leaderboard(mock_message)
+        mock_message.reply.assert_awaited_once()
+        args = mock_message.reply.await_args[0][0]
+        assert "solo funciona en grupos" in args
+
     async def test_with_data_text_fallback(self, mock_message):
         mock_message.reply.return_value.edit_text = AsyncMock()
         mock_message.bot = AsyncMock()
@@ -591,6 +601,18 @@ class TestCmdLeaderboard:
                 status_msg = mock_message.reply.return_value
                 status_msg.edit_text.assert_awaited_once()
 
+    async def test_passes_group_chat_id(self, mock_message):
+        mock_message.reply.return_value.edit_text = AsyncMock()
+        get_weekly_top_mock = AsyncMock(return_value=[])
+        with patch("src.handlers.game.leaderboard.leaderboard_service") as mock_ls:
+            mock_ls.get_weekly_top = get_weekly_top_mock
+            from src.handlers.game.leaderboard import cmd_leaderboard
+
+            await cmd_leaderboard(mock_message)
+            get_weekly_top_mock.assert_awaited_once_with(
+                group_chat_id=-100123456789, limit=10
+            )
+
 
 class TestCmdRank:
     async def test_no_data(self, mock_message):
@@ -602,6 +624,20 @@ class TestCmdRank:
 
             await cmd_rank(mock_message)
             mock_message.reply.assert_awaited_once()
+
+    async def test_private_chat_rejected(self, mock_message):
+        mock_message.chat.type = "private"
+        mock_message.reply = AsyncMock()
+        with patch("src.handlers.game.leaderboard.leaderboard_service") as mock_ls:
+            mock_ls.get_player_rank_by_telegram = AsyncMock(return_value=None)
+            from src.handlers.game.leaderboard import cmd_rank
+
+            await cmd_rank(mock_message)
+            # Con chat.type=private el handler retorna temprano sin consultar servicio
+            mock_ls.get_player_rank_by_telegram.assert_not_awaited()
+            mock_message.reply.assert_awaited_once()
+            args = mock_message.reply.await_args[0][0]
+            assert "solo funciona en grupos" in args
 
     async def test_with_rank(self, mock_message):
         mock_message.from_user.id = 123456789

@@ -218,6 +218,13 @@ class RoundManager:
             logger.info("submit_answers: no categories parsed from text")
             return False
 
+        # --- Tratar "..." como respuesta vacia ---
+        _EMPTY_SYMBOLS = frozenset({"...", "…", ". . .", ".."})  # noqa: N806
+        for slot in list(parsed.keys()):
+            val = parsed[slot].strip("., •-")
+            if not val or val.lower() in _EMPTY_SYMBOLS:
+                parsed[slot] = ""
+
         # NUEVO: validar respuestas con SpellCorrector en modo hybrid/ai
         # Las respuestas invalidas semanticamente se vacian (0 puntos)
 
@@ -229,7 +236,9 @@ class RoundManager:
 
             async def _validate_slot(slot: str, raw_text: str) -> tuple[str, str, bool]:
                 if raw_text and raw_text.strip():
-                    is_valid = await corrector.validate(raw_text, slot, mode=effective_validation_mode)
+                    is_valid = await corrector.validate(
+                        raw_text, slot, mode=effective_validation_mode
+                    )
                     return slot, raw_text, is_valid
                 return slot, raw_text, True
 
@@ -408,6 +417,7 @@ class RoundManager:
         # Asegurar que todas las palabras aprendidas se persistan antes de continuar
         try:
             from src.services.spell_corrector import get_corrector
+
             await get_corrector().flush_pending_tasks()
         except Exception:
             logger.exception("Error en flush_pending_tasks")
@@ -474,7 +484,8 @@ class RoundManager:
         except TelegramRetryAfter as e:
             logger.warning(
                 "TelegramRetryAfter en _do_close_round_telegram: game=%s, retry_after=%d",
-                state.game_id, e.retry_after,
+                state.game_id,
+                e.retry_after,
             )
             await asyncio.sleep(e.retry_after)
         except Exception:
@@ -510,7 +521,9 @@ class RoundManager:
                     reply_markup=inter_round_keyboard(state.game_id),
                 )
                 state.inter_round_message_id = msg.message_id
-                state.inter_round_timeout_task = asyncio.create_task(self._inter_round_timeout(state, bot))
+                state.inter_round_timeout_task = asyncio.create_task(
+                    self._inter_round_timeout(state, bot)
+                )
                 return
             except TelegramRetryAfter as e:
                 if attempt < 2:
@@ -523,7 +536,8 @@ class RoundManager:
             except Exception:
                 logger.warning(
                     "Error inesperado en _show_inter_round_menu attempt %d: game=%s",
-                    attempt, state.game_id,
+                    attempt,
+                    state.game_id,
                 )
                 if attempt < 2:
                     await asyncio.sleep(5)
@@ -547,7 +561,9 @@ class RoundManager:
             if not state:
                 active = self._rounds.get(game_id)
                 if active:
-                    await callback.answer("⏳ La ronda ya está en curso. Esperá a que termine.", show_alert=True)
+                    await callback.answer(
+                        "⏳ La ronda ya está en curso. Esperá a que termine.", show_alert=True
+                    )
                 else:
                     await callback.answer("❌ Esta partida ya no está activa.", show_alert=True)
                 return
@@ -577,7 +593,9 @@ class RoundManager:
             if not state:
                 active = self._rounds.get(game_id)
                 if active:
-                    await callback.answer("⏳ La ronda ya está en curso. Esperá a que termine.", show_alert=True)
+                    await callback.answer(
+                        "⏳ La ronda ya está en curso. Esperá a que termine.", show_alert=True
+                    )
                 else:
                     await callback.answer("❌ Esta partida ya no está activa.", show_alert=True)
                 return
@@ -768,12 +786,13 @@ class RoundManager:
             await leaderboard_service.upsert_player(
                 player_id=player.id,
                 score_to_add=score,
+                group_chat_id=state.group_chat_id,
             )
 
         # === Recalcular ranks semanales ===
         from src.db.repositories.leaderboard_repository import LeaderboardRepository
 
-        await LeaderboardRepository.recalculate_ranks()
+        await LeaderboardRepository.recalculate_ranks(group_chat_id=state.group_chat_id)
 
         podium_data = [
             (state.player_names.get(pid, f"Jugador {pid}"), score) for pid, score in winners[:5]

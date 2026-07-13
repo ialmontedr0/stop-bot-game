@@ -21,10 +21,15 @@ def _current_week_range() -> str:
 
 @leaderboard_router.message(Command("leaderboard"))
 async def cmd_leaderboard(message: Message) -> None:
+    if message.chat.type == "private":
+        await message.reply("❌ Este comando solo funciona en grupos.")
+        return
+
+    group_chat_id = message.chat.id
     status_msg = await message.reply("📊 Cargando leaderboard...")
 
     try:
-        rows = await leaderboard_service.get_weekly_top(limit=10)
+        rows = await leaderboard_service.get_weekly_top(group_chat_id=group_chat_id, limit=10)
 
         if not rows:
             await status_msg.edit_text(
@@ -98,7 +103,13 @@ async def cmd_rank(message: Message) -> None:
     if not message.from_user:
         return
 
-    data = await leaderboard_service.get_player_rank_by_telegram(message.from_user.id)
+    if message.chat.type == "private":
+        await message.reply("❌ Este comando solo funciona en grupos.")
+
+    group_chat_id = message.chat.id
+    data = await leaderboard_service.get_player_rank_by_telegram(
+        message.from_user.id, group_chat_id=group_chat_id
+    )
     if not data:
         await message.reply(
             "Aún no apareces en el leaderboard semanal.\n¡Juega una partida para empezar!"

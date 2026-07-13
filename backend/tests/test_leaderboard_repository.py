@@ -32,6 +32,22 @@ class TestUpsertPlayerWeek:
     @pytest.mark.asyncio
     async def test_creates_new_entry(self):
         await LeaderboardRepository.upsert_player_week(1, 100)
+        # Verificar que la query incluye group_chat_id=0 por defecto
+        call_args = self._mock_session.execute.call_args
+        stmt = call_args[0][0]
+        stmt_str = str(stmt)
+        assert "group_chat_id" in stmt_str
+        self._mock_session.add.assert_called_once()
+        self._mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_creates_new_entry_with_group(self):
+        await LeaderboardRepository.upsert_player_week(1, 100, group_chat_id=-100123)
+        call_args = self._mock_session.execute.call_args
+        stmt = call_args[0][0]
+        stmt_str = str(stmt)
+        assert "group_chat_id" in stmt_str
+        assert ":group_chat_id_1" in stmt_str or "-100123" in stmt_str
         self._mock_session.add.assert_called_once()
         self._mock_session.commit.assert_awaited_once()
 
@@ -65,3 +81,18 @@ class TestRecalculateRanks:
             await LeaderboardRepository.recalculate_ranks()
             assert e1.rank == 1
             assert e2.rank == 2
+
+    @pytest.mark.asyncio
+    async def test_recalculates_ranks_per_group(self):
+        e1 = MagicMock()
+        e1.rank = 0
+
+        mock_ses = _mock_session(scalars_all_value=[e1])
+        mod = sys.modules["src.db.repositories.leaderboard_repository"]
+        with patch.object(mod, "async_session_factory") as m:
+            m.return_value.__aenter__.return_value = mock_ses
+            await LeaderboardRepository.recalculate_ranks(group_chat_id=-100456)
+            assert e1.rank == 1
+            call_args = mock_ses.execute.call_args
+            stmt_str = str(call_args[0][0])
+            assert "group_chat_id" in stmt_str

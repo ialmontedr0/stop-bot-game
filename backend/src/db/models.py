@@ -132,10 +132,13 @@ class Answer(Base):
 class WeeklyLeaderboard(Base):
     __tablename__ = "weekly_leaderboards"
 
-    __table_args__ = (UniqueConstraint("player_id", "week_start", name="uq_player_week"),)
+    __table_args__ = (
+        UniqueConstraint("player_id", "week_start", "group_chat_id", name="uq_player_week_group"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
+    group_chat_id: Mapped[int] = mapped_column(BigInteger, default=0)
     week_start: Mapped[date] = mapped_column(default=lambda: date.today())
     total_score: Mapped[int] = mapped_column(default=0)
     games_played: Mapped[int] = mapped_column(default=0)
