@@ -39,6 +39,9 @@ def _is_valid_word(text: str, letter: str | None = None) -> bool:
         return False
     stripped = text.strip()
 
+    if len(stripped) < 2:
+        return False
+
     if not re.match(r"^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-']+$", stripped):
         return False
     if letter:

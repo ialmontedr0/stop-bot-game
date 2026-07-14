@@ -440,6 +440,11 @@ class SpellCorrector:
         cat_lower = self._normalize_category(category)
         cat_words = self._word_lists.setdefault(cat_lower, set())
 
+        # 0 - Rechazar respuestas de 1 solo caracter (letra suelta)
+        if len(norm) < 2:
+            self._validation_source[f"{cat_lower}:{norm}"] = "too_short"
+            return False
+
         # 1 - En word list
         if norm in cat_words:
             self._validation_source[f"{cat_lower}:{norm}"] = "word_list"

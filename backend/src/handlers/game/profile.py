@@ -112,7 +112,7 @@ async def cmd_profile(message: Message, player: Player) -> None:
         # Rank semanal (opcional)
         from src.services.leaderboard import leaderboard_service
 
-        rank_data = await leaderboard_service.get_player_rank_by_telegram(player.telegram_id)
+        rank_data = await leaderboard_service.get_player_rank_by_telegram(player.telegram_id, message.chat.id)
         if rank_data:
             lines.append("")
             lines.append(f"{hbold('📊 Rank Semanal')}")
