@@ -557,7 +557,7 @@ class SpellCorrector:
                 "exoticas (Mangostan, Carambola) "
                 "y frutos secos (Almendra, Nuez).\n"
                 "- Artistas: acepta cualquier musico, "
-                "cantante o banda, incluyendo famosos, "
+                "cantante o banda, actores/actrices, escritores, incluyendo famosos, "
                 "locales y emergentes.\n"
                 "- Animales: acepta cualquier animal "
                 "real, incluyendo razas, variedades y "
