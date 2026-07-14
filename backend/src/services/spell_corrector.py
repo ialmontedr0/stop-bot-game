@@ -565,6 +565,8 @@ class SpellCorrector:
                 "- Cosas: acepta cualquier objeto, "
                 "instrumento, herramienta, mueble, "
                 "prenda, electrodomestico, juguete.\n\n"
+                "IMPORTANTE: Responde 'no' si no estas SEGURO de que existe. "
+                "No aceptes nombres inventados aunque suenen plausibles."
             )
             if is_gemini:
                 messages = [
