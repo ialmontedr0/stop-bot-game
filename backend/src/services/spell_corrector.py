@@ -505,16 +505,14 @@ class SpellCorrector:
                     return True
                 else:
                     self._validation_source[f"{cat_lower}:{norm}"] = "ai_rejected"
-                    # AI rechazó, pero igual caemos a default permisivo
-                    # para evitar falsos negativos del modelo
+                    return False
+
             else:
                 self._api_failed += 1
 
         # 4 - Default permisivo (API agotada o modo local)
         cat_words.add(norm)
-        self._track_task(
-            asyncio.create_task(self.add_to_word_list_persistent(norm, category))
-        )
+        self._track_task(asyncio.create_task(self.add_to_word_list_persistent(norm, category)))
         self._validation_source[f"{cat_lower}:{norm}"] = "default"
         return True
 
@@ -567,15 +565,13 @@ class SpellCorrector:
                 "- Cosas: acepta cualquier objeto, "
                 "instrumento, herramienta, mueble, "
                 "prenda, electrodomestico, juguete.\n\n"
-                "En caso de duda responde 'si'."
             )
             if is_gemini:
                 messages = [
                     {
                         "role": "user",
                         "content": (
-                            f"{system_prompt}\n\n"
-                            f"Categoria:'{category}'\nPalabra: '{word}'"
+                            f"{system_prompt}\n\nCategoria:'{category}'\nPalabra: '{word}'"
                         ),
                     }
                 ]
