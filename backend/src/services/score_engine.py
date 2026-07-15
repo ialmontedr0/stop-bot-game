@@ -285,13 +285,10 @@ class ScoreEngine:
             eval_results.append({"player_id": pid, "total": total, "categories": cat_scores})
         logger.info(
             "score_evaluation",
-            extra={
-                "event": "score_evaluation",
-                "num_players": len(answers_by_player),
-                "num_categories": num_categories,
-                "first_completer_id": first_completer_id,
-                "results": eval_results,
-            },
+            num_players=len(answers_by_player),
+            num_categories=num_categories,
+            first_completer_id=first_completer_id,
+            results=eval_results,
         )
 
         return dict(totals), dict(details)
