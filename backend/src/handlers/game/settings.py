@@ -176,6 +176,7 @@ async def toggle_cat(callback: CallbackQuery) -> None:
         else:
             selected.append(cat)
 
+        selected.sort(key=lambda c: ALL_CATEGORIES.index(c) if c in ALL_CATEGORIES else 999)
         config.categories = _serialize_categories(selected)
         await session.commit()
 
