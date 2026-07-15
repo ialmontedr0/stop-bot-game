@@ -271,6 +271,29 @@ class ScoreEngine:
         if first_completer_id is not None and first_completer_id in totals:
             totals[first_completer_id] += FIRST_COMPLETER_BONUS
 
+        # ── Log estructurado de evaluación ──
+        eval_results = []
+        for pid, total in sorted(totals.items(), key=lambda x: x[1], reverse=True):
+            cat_scores = {}
+            for ad in details.get(pid, []):
+                slot = ad["word_slot"]
+                cat_scores[slot] = {
+                    "text": ad["raw_text"],
+                    "correct": ad["is_correct"],
+                    "score": ad["score"],
+                }
+            eval_results.append({"player_id": pid, "total": total, "categories": cat_scores})
+        logger.info(
+            "score_evaluation",
+            extra={
+                "event": "score_evaluation",
+                "num_players": len(answers_by_player),
+                "num_categories": num_categories,
+                "first_completer_id": first_completer_id,
+                "results": eval_results,
+            },
+        )
+
         return dict(totals), dict(details)
 
     @staticmethod

@@ -248,10 +248,15 @@ class RoundManager:
                 if not is_valid:
                     parsed[slot] = ""
                     logger.info(
-                        "Respuesta rechazada por IA: %s=%s (player=%s)",
-                        slot,
-                        raw_text,
-                        player.id,
+                        "ia_rejection",
+                        extra={
+                            "event": "ia_rejection",
+                            "game_id": game_id,
+                            "player_id": player.id,
+                            "telegram_id": player.telegram_id,
+                            "category": slot,
+                            "rejected_text": raw_text,
+                        },
                     )
 
         try:
@@ -285,10 +290,17 @@ class RoundManager:
 
             all_filled = len(parsed) == len(state.categories)
             logger.info(
-                "submit_answers: categories=%s parsed=%s all_filled=%s",
-                len(state.categories),
-                len(parsed),
-                all_filled,
+                "submit_answers",
+                extra={
+                    "event": "submit_answers",
+                    "game_id": game_id,
+                    "player_id": player.id,
+                    "telegram_id": player.telegram_id,
+                    "total_categories": len(state.categories),
+                    "answered_count": len(parsed),
+                    "all_filled": all_filled,
+                    "answers": dict(parsed),
+                },
             )
 
             if all_filled:
@@ -407,10 +419,10 @@ class RoundManager:
         round_scores: dict[int, int] = {}
         if round_id is not None:
             try:
-                round_scores = await self._persist_round_scores(round_id, state)
+                round_scores = await self._persist_round_scores(round_id, state, reason=reason)
             except Exception:
                 logger.exception(
-                    "Error en _persist_round_scores para game=%s round=%",
+                    "Error en _persist_round_scores para game=%s round=%s",
                     state.game_id,
                     state.round_number,
                 )
@@ -490,7 +502,7 @@ class RoundManager:
             await asyncio.sleep(e.retry_after)
         except Exception:
             logger.exception(
-                "Erro ren _do_close_round_telegram para game=%s round=%s",
+                "Error en _do_close_round_telegram para game=%s round=%s",
                 state.game_id,
                 state.round_number,
             )
@@ -855,6 +867,35 @@ class RoundManager:
         lines.append("<i>Gracias por jugar 🛑 Stop!</i>")
 
         await bot.send_message(state.group_chat_id, "\n".join(lines))
+
+        # ── Log estructurado de fin de partida ──
+        standings_data = []
+        for position, (pid, score) in enumerate(winners):
+            name = state.player_names.get(pid, f"ID{pid}")
+            xp_info = xp_results.get(pid, {})
+            standings_data.append({
+                "position": position + 1,
+                "player_id": pid,
+                "name": name,
+                "score": score,
+                "xp_gained": xp_info.get("xp_gained", 0),
+                "level": xp_info.get("level"),
+                "leveled_up": xp_info.get("leveled_up", False),
+            })
+        logger.info(
+            "game_finished",
+            extra={
+                "event": "game_finished",
+                "game_id": state.game_id,
+                "group_chat_id": state.group_chat_id,
+                "total_rounds": state.round_number,
+                "total_players": state.total_players,
+                "validation_mode": state.validation_mode,
+                "first_completer_id": state.first_completer_id,
+                "standings": standings_data,
+            },
+        )
+
         self._letter_pending.pop(state.game_id, None)
         self._rounds_by_group.pop(state.group_chat_id, None)
 
@@ -942,6 +983,7 @@ class RoundManager:
         self,
         round_id: int,
         state: RoundState,
+        reason: str | None = None,
     ) -> dict[int, int]:
         async with async_session_factory() as session:
             repo = RoundRepository(session)
@@ -956,30 +998,38 @@ class RoundManager:
                 letter=state.letter,
             )
 
-            # ── LOG TEMPORAL: muestra que respuestas fueron correctas/incorrectas ──
-            logger.info(
-                "=== RESULTADOS RONDA %s (letra=%s) ===",
-                state.round_number,
-                state.letter,
-            )
-            for pid, answer_list in details.items():
+            # ── Log estructurado de resultados de ronda ──
+            players_data = []
+            for pid, total in sorted(totals.items(), key=lambda x: x[1], reverse=True):
                 pname = state.player_names.get(pid, f"ID{pid}")
-                for ad in answer_list:
-                    status = "✅" if ad["is_correct"] else "❌"
-                    logger.info(
-                        "  %s %s | %s: '%s' → %d pts",
-                        status,
-                        pname,
-                        ad["word_slot"],
-                        ad["raw_text"],
-                        ad["score"],
-                    )
-            if details:
-                logger.info("  --- Totales ---")
-                for pid, total in sorted(totals.items(), key=lambda x: x[1], reverse=True):
-                    pname = state.player_names.get(pid, f"ID{pid}")
-                    logger.info("  %s: %d pts", pname, total)
-            logger.info("=== FIN RESULTADOS RONDA %s ===", state.round_number)
+                answers_data = []
+                for ad in details.get(pid, []):
+                    answers_data.append({
+                        "category": ad["word_slot"],
+                        "answer": ad["raw_text"],
+                        "correct": ad["is_correct"],
+                        "score": ad["score"],
+                        "validation_source": ad.get("validation_source", "unknown"),
+                    })
+                players_data.append({
+                    "player_id": pid,
+                    "name": pname,
+                    "answers": answers_data,
+                    "total": total,
+                })
+            logger.info(
+                "round_result",
+                extra={
+                    "event": "round_result",
+                    "game_id": state.game_id,
+                    "group_chat_id": state.group_chat_id,
+                    "round_number": state.round_number,
+                    "letter": state.letter,
+                    "reason": reason,
+                    "validation_mode": state.validation_mode,
+                    "players": players_data,
+                },
+            )
 
             # Persistir Answer.score y Answer.is_correct (batch)
             all_updates = []
