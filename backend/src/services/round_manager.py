@@ -867,15 +867,17 @@ class RoundManager:
         for position, (pid, score) in enumerate(winners):
             name = state.player_names.get(pid, f"ID{pid}")
             xp_info = xp_results.get(pid, {})
-            standings_data.append({
-                "position": position + 1,
-                "player_id": pid,
-                "name": name,
-                "score": score,
-                "xp_gained": xp_info.get("xp_gained", 0),
-                "level": xp_info.get("level"),
-                "leveled_up": xp_info.get("leveled_up", False),
-            })
+            standings_data.append(
+                {
+                    "position": position + 1,
+                    "player_id": pid,
+                    "name": name,
+                    "score": score,
+                    "xp_gained": xp_info.get("xp_gained", 0),
+                    "level": xp_info.get("level"),
+                    "leveled_up": xp_info.get("leveled_up", False),
+                }
+            )
         logger.info(
             "game_finished",
             game_id=state.game_id,
@@ -995,19 +997,23 @@ class RoundManager:
                 pname = state.player_names.get(pid, f"ID{pid}")
                 answers_data = []
                 for ad in details.get(pid, []):
-                    answers_data.append({
-                        "category": ad["word_slot"],
-                        "answer": ad["raw_text"],
-                        "correct": ad["is_correct"],
-                        "score": ad["score"],
-                        "validation_source": ad.get("validation_source", "unknown"),
-                    })
-                players_data.append({
-                    "player_id": pid,
-                    "name": pname,
-                    "answers": answers_data,
-                    "total": total,
-                })
+                    answers_data.append(
+                        {
+                            "category": ad["word_slot"],
+                            "answer": ad["raw_text"],
+                            "correct": ad["is_correct"],
+                            "score": ad["score"],
+                            "validation_source": ad.get("validation_source", "unknown"),
+                        }
+                    )
+                players_data.append(
+                    {
+                        "player_id": pid,
+                        "name": pname,
+                        "answers": answers_data,
+                        "total": total,
+                    }
+                )
             logger.info(
                 "round_result",
                 game_id=state.game_id,
