@@ -6,7 +6,6 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-import structlog
 from aiogram import Bot
 from aiogram.exceptions import (
     TelegramBadRequest,
@@ -24,7 +23,8 @@ from src.services.score_engine import FIRST_COMPLETER_BONUS, ScoreEngine
 from src.services.spell_corrector import get_corrector
 from src.services.xp_service import xp_service
 
-logger = structlog.get_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 NUM_STOP_BUTTONS = 10
 ROUND_DURATION = 60
@@ -249,11 +249,13 @@ class RoundManager:
                     parsed[slot] = ""
                     logger.info(
                         "ia_rejection",
-                        game_id=game_id,
-                        player_id=player.id,
-                        telegram_id=player.telegram_id,
-                        category=slot,
-                        rejected_text=raw_text,
+                        extra={
+                            "game_id": game_id,
+                            "player_id": player.id,
+                            "telegram_id": player.telegram_id,
+                            "category": slot,
+                            "rejected_text": raw_text,
+                        },
                     )
 
         try:
@@ -288,13 +290,15 @@ class RoundManager:
             all_filled = len(parsed) == len(state.categories)
             logger.info(
                 "submit_answers",
-                game_id=game_id,
-                player_id=player.id,
-                telegram_id=player.telegram_id,
-                total_categories=len(state.categories),
-                answered_count=len(parsed),
-                all_filled=all_filled,
-                answers=dict(parsed),
+                extra={
+                    "game_id": game_id,
+                    "player_id": player.id,
+                    "telegram_id": player.telegram_id,
+                    "total_categories": len(state.categories),
+                    "answered_count": len(parsed),
+                    "all_filled": all_filled,
+                    "answers": dict(parsed),
+                },
             )
 
             if all_filled:
@@ -880,13 +884,15 @@ class RoundManager:
             )
         logger.info(
             "game_finished",
-            game_id=state.game_id,
-            group_chat_id=state.group_chat_id,
-            total_rounds=state.round_number,
-            total_players=state.total_players,
-            validation_mode=state.validation_mode,
-            first_completer_id=state.first_completer_id,
-            standings=standings_data,
+            extra={
+                "game_id": state.game_id,
+                "group_chat_id": state.group_chat_id,
+                "total_rounds": state.round_number,
+                "total_players": state.total_players,
+                "validation_mode": state.validation_mode,
+                "first_completer_id": state.first_completer_id,
+                "standings": standings_data,
+            },
         )
 
         self._letter_pending.pop(state.game_id, None)
@@ -1016,13 +1022,15 @@ class RoundManager:
                 )
             logger.info(
                 "round_result",
-                game_id=state.game_id,
-                group_chat_id=state.group_chat_id,
-                round_number=state.round_number,
-                letter=state.letter,
-                reason=reason,
-                validation_mode=state.validation_mode,
-                players=players_data,
+                extra={
+                    "game_id": state.game_id,
+                    "group_chat_id": state.group_chat_id,
+                    "round_number": state.round_number,
+                    "letter": state.letter,
+                    "reason": reason,
+                    "validation_mode": state.validation_mode,
+                    "players": players_data,
+                },
             )
 
             # Persistir Answer.score y Answer.is_correct (batch)

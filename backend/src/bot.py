@@ -59,6 +59,18 @@ class LoggedBot(Bot):
             logger.exception("Error en _log_message: chat_id=%s message_id=%s", chat_id, message_id)
 
 
+def _promote_extra(
+    _logger: logging.Logger,
+    _method_name: str,
+    event_dict: dict,
+) -> dict:
+    """Promueve el dict ``extra`` a la raíz del event_dict para structlog."""
+    if "extra" in event_dict and isinstance(event_dict["extra"], dict):
+        extra = event_dict.pop("extra")
+        event_dict.update(extra)
+    return event_dict
+
+
 def setup_logging() -> None:
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 
@@ -76,6 +88,8 @@ def setup_logging() -> None:
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.stdlib.ExtraAdder(),
+        _promote_extra,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,

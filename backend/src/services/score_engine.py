@@ -9,8 +9,8 @@ from src.db.models import Answer
 if TYPE_CHECKING:
     from src.services.spell_corrector import SpellCorrector
 
-import structlog
-logger = structlog.get_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 UNIQUE_POINTS = 50
 FIRST_COMPLETER_BONUS = 10
@@ -285,10 +285,12 @@ class ScoreEngine:
             eval_results.append({"player_id": pid, "total": total, "categories": cat_scores})
         logger.info(
             "score_evaluation",
-            num_players=len(answers_by_player),
-            num_categories=num_categories,
-            first_completer_id=first_completer_id,
-            results=eval_results,
+            extra={
+                "num_players": len(answers_by_player),
+                "num_categories": num_categories,
+                "first_completer_id": first_completer_id,
+                "results": eval_results,
+            },
         )
 
         return dict(totals), dict(details)
