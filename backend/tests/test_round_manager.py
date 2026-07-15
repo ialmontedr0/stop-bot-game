@@ -8,8 +8,8 @@ import pytest
 from src.db.models import Player
 from src.services.round_manager import (
     ALPHABET,
-    ANSWER_REGEX,
     CATEGORIES,
+    LINE_REGEX,
     NUM_STOP_BUTTONS,
     ROUND_DURATION,
     TOTAL_ROUNDS,
@@ -38,35 +38,30 @@ def mock_db():
         yield
 
 
-# ── ANSWER_REGEX ────────────────────────────────────────────────────────────
+# ── LINE_REGEX ──────────────────────────────────────────────────────────────
 
 
-class TestAnswerRegex:
+class TestLineRegex:
     def test_basic_match(self):
-        m = ANSWER_REGEX.match("Nombre: Juan")
+        m = LINE_REGEX.match("Nombre: Juan")
         assert m is not None
         assert m.group(1).strip() == "Nombre"
         assert m.group(2).strip() == "Juan"
 
     def test_match_with_spaces(self):
-        m = ANSWER_REGEX.match("  País o Ciudad :  Buenos Aires  ")
+        m = LINE_REGEX.match("  País o Ciudad :  Buenos Aires  ")
         assert m is not None
         assert m.group(1).strip() == "País o Ciudad"
         assert m.group(2).strip() == "Buenos Aires"
 
     def test_match_with_empty_value(self):
-        m = ANSWER_REGEX.match("Color: ")
+        m = LINE_REGEX.match("Color: ")
         assert m is not None
         assert m.group(1).strip() == "Color"
         assert m.group(2).strip() == ""
 
-    def test_multiline(self):
-        text = "Nombre: Juan\nColor: Rojo\nAnimal: Perro"
-        matches = ANSWER_REGEX.findall(text)
-        assert len(matches) == 3
-
     def test_no_match_without_colon(self):
-        m = ANSWER_REGEX.match("Nombre Juan")
+        m = LINE_REGEX.match("Nombre Juan")
         assert m is None
 
 
@@ -520,6 +515,12 @@ class TestParseAnswersEdgeCases:
         assert "Nombre" in result
         assert "Color" in result
         assert "FakeCategory" not in result
+
+    def test_blank_category_does_not_swallow_next(self):
+        text = "País: \nArtista: R"
+        result = parse_answers(text, CATEGORIES)
+        assert "País" not in result or result.get("País") == ""
+        assert result.get("Artista") == "R"
 
 
 class TestRoundManagerConstants:

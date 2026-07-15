@@ -1177,7 +1177,7 @@ class RoundManager:
         )
 
 
-ANSWER_REGEX = re.compile(r"^\s*(.+?)\s*:\s*(.*?)\s*$", re.MULTILINE)
+LINE_REGEX = re.compile(r"^\s*(.+?)\s*:\s*(.*?)\s*$")
 
 
 def _unaccent(s: str) -> str:
@@ -1193,7 +1193,10 @@ def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
 
     result: dict[str, str] = {}
 
-    for match in ANSWER_REGEX.finditer(text):
+    for line in text.splitlines():
+        match = LINE_REGEX.match(line)
+        if not match:
+            continue
         raw_cat = _unaccent(match.group(1).strip().lower())
         value = match.group(2).strip()
         if not value:
