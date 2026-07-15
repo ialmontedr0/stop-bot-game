@@ -1,4 +1,3 @@
-import logging
 import re
 import unicodedata
 from collections import defaultdict
@@ -10,7 +9,8 @@ from src.db.models import Answer
 if TYPE_CHECKING:
     from src.services.spell_corrector import SpellCorrector
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger(__name__)
 
 UNIQUE_POINTS = 50
 FIRST_COMPLETER_BONUS = 10

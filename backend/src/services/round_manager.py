@@ -1,12 +1,12 @@
 import asyncio
 import contextlib
-import logging
 import random
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import structlog
 from aiogram import Bot
 from aiogram.exceptions import (
     TelegramBadRequest,
@@ -24,7 +24,7 @@ from src.services.score_engine import FIRST_COMPLETER_BONUS, ScoreEngine
 from src.services.spell_corrector import get_corrector
 from src.services.xp_service import xp_service
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 NUM_STOP_BUTTONS = 10
 ROUND_DURATION = 60
