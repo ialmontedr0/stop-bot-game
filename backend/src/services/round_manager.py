@@ -23,8 +23,9 @@ from src.services.score_engine import FIRST_COMPLETER_BONUS, ScoreEngine
 from src.services.spell_corrector import get_corrector
 from src.services.xp_service import xp_service
 
-import logging
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 NUM_STOP_BUTTONS = 10
 ROUND_DURATION = 60
