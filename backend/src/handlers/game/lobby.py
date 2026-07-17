@@ -68,6 +68,26 @@ async def callback_join(callback: CallbackQuery, player: Player, bot: Bot) -> No
         await callback.answer("❌ Error al unirse a la partida.", show_alert=True)
 
 
+@game_router.callback_query(F.data.startswith("leave:"))
+@error_tracker.track_errors(handler_name="callback_leave")
+async def callback_leave(callback: CallbackQuery, player: Player, bot: Bot) -> None:
+    try:
+        game_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Datos inválidos.", show_alert=True)
+        return
+    try:
+        await lobby_manager.leave_lobby(
+            game_id=game_id,
+            player=player,
+            callback=callback,
+            bot=bot,
+        )
+    except Exception:
+        logger.exception("Error en leave_lobby: game_id=%s jugador=%s", game_id, player.telegram_id)
+        await callback.answer("❌ Error al salir de la partida.", show_alert=True)
+
+
 @game_router.callback_query(F.data.startswith("start:"))
 @error_tracker.track_errors(handler_name="callback_start")
 async def callback_start(callback: CallbackQuery, player: Player, bot: Bot) -> None:

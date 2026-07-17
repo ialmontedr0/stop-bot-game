@@ -5,10 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 from src.db.models import Player
 from src.services.error_tracker import error_tracker
-from src.services.round_manager import (
-    get_alphabet,
-    round_manager,
-)
+from src.services.round_manager import round_manager
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +26,14 @@ async def handle_round_answer(message: Message, player: Player, bot: Bot) -> Non
         return
 
     try:
-        await round_manager.submit_answers(
+        logger.info("handle_round_answer: calling submit_answers game=%s player_tg=%s", state.game_id, player.telegram_id)
+        result = await round_manager.submit_answers(
             game_id=state.game_id,
             player=player,
             text=message.text,
             bot=bot,
         )
+        logger.info("handle_round_answer: submit_answers returned %s for game=%s player_tg=%s", result, state.game_id, player.telegram_id)
     except Exception:
         logger.exception(
             "Error al procesar respuesta de %s en game %s", player.telegram_id, state.game_id
@@ -69,14 +68,28 @@ async def callback_letter(callback: CallbackQuery, player: Player, bot: Bot) -> 
         await callback.answer("❌ Datos inválidos.", show_alert=True)
         return
 
-    if letter not in get_alphabet(include_n=True):
-        await callback.answer("❌ Letra inválida.", show_alert=True)
-        return
-
     await round_manager.handle_letter_selection(
         game_id=game_id,
         player_id=player.telegram_id,
         letter=letter,
+        callback=callback,
+        bot=bot,
+    )
+
+
+@round_router.callback_query(F.data.startswith("skip_letter:"))
+@error_tracker.track_errors(handler_name="callback_skip_letter")
+async def callback_skip_letter(callback: CallbackQuery, player: Player, bot: Bot) -> None:
+    try:
+        _, game_id_str = callback.data.split(":")
+        game_id = int(game_id_str)
+    except (ValueError, IndexError):
+        await callback.answer("❌ Datos inválidos.", show_alert=True)
+        return
+
+    await round_manager.handle_skip_letter(
+        game_id=game_id,
+        player_id=player.telegram_id,
         callback=callback,
         bot=bot,
     )

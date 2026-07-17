@@ -31,13 +31,11 @@ LETTERS = [
 
 
 def stop_keyboard(game_id: int, stop_number: int) -> InlineKeyboardMarkup:
-    filled = "🟩" * stop_number
-    empty = "⬜" * (10 - stop_number)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"🛑 Stop {filled}{empty}",
+                    text=f"🛑 Stop ({stop_number}/10)",
                     callback_data=f"stop:{game_id}:{stop_number}",
                 )
             ]
@@ -68,6 +66,12 @@ def letter_keyboard(game_id: int, include_n: bool = False) -> InlineKeyboardMark
             ]
         )
         start += size
+    keyboard.append([
+        InlineKeyboardButton(
+            text="🎲 Siguiente",
+            callback_data=f"skip_letter:{game_id}",
+        )
+    ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 

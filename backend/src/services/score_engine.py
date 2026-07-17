@@ -121,11 +121,9 @@ def _determine_answer_scores_fuzzy(
     # ── Si es categoría con word list en BD, validar primero ──
     if category and spell_corrector.is_db_category(category):
         valid_answers: list[tuple[int, Answer]] = []
-        invalid_pids: set[int] = set()
         for pid, ans in player_answers:
             txt = ans.raw_text.strip()
             if not _is_valid_word(txt, letter=letter):
-                invalid_pids.add(pid)
                 continue
             is_valid, corrected = spell_corrector.validate_against_list(txt, category)
             if is_valid:
@@ -138,8 +136,6 @@ def _determine_answer_scores_fuzzy(
                     id=ans.id,
                 )
                 valid_answers.append((pid, corrected_ans))
-            else:
-                invalid_pids.add(pid)
 
         if not valid_answers:
             return dict.fromkeys(all_pids, (False, 0))
@@ -219,6 +215,7 @@ class ScoreEngine:
         first_completer_id: int | None = None,
         spell_corrector: Optional["SpellCorrector"] = None,
         letter: str | None = None,
+        game_id: int = 0,
     ) -> tuple[dict[int, int], dict[int, list[dict]]]:
         totals: dict[int, int] = defaultdict(int)
         details: dict[int, list[dict]] = defaultdict(list)
@@ -250,7 +247,7 @@ class ScoreEngine:
                     ):
                         norm = spell_corrector.normalize(ans.raw_text)
                         cat_norm = spell_corrector._normalize_category(canonical_cat)
-                        source = spell_corrector.get_validation_source(f"{cat_norm}:{norm}")
+                        source = spell_corrector.get_validation_source(game_id, f"{cat_norm}:{norm}")
                         detail_entry["validation_source"] = source
                     details[pid].append(detail_entry)
 

@@ -71,8 +71,6 @@ class LeaderboardRepository:
     ) -> None:
         ws = week_start or _current_week_start()
         async with async_session_factory() as session:
-            ws = week_start or _current_week_start()
-        async with async_session_factory() as session:
             stmt = select(WeeklyLeaderboard).where(
                 WeeklyLeaderboard.week_start == ws,
             )

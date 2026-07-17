@@ -7,6 +7,8 @@ build/
 *.egg
 .venv/
 venv/
+assets/cache/
+assets/*
 
 # Env
 .env

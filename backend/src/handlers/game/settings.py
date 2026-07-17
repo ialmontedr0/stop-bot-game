@@ -2,7 +2,7 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.markdown import hbold
 
 from src.db.engine import async_session_factory
@@ -11,12 +11,14 @@ from src.db.repositories.group_config_repository import GroupConfigRepository
 from src.i18n import get_user_locale, t
 from src.keyboards.settings import (
     ALL_CATEGORIES,
+    MODE_OPTIONS,
     settings_cats_keyboard,
     settings_main_keyboard,
     settings_mode_keyboard,
     settings_rounds_keyboard,
     settings_time_keyboard,
 )
+from src.services.error_tracker import error_tracker
 from src.utils import is_admin
 
 logger = logging.getLogger(__name__)
@@ -39,8 +41,24 @@ def _serialize_categories(cats: list[str]) -> str:
     return ",".join(cats)
 
 
+async def _require_admin(callback: CallbackQuery) -> bool:
+    if callback.message.chat.type == "private":
+        await callback.answer("❌ Solo funciona en grupos.", show_alert=True)
+        return False
+    if not await is_admin(callback.bot, callback.message.chat.id, callback.from_user.id):
+        await callback.answer(
+            "❌ Solo administradores pueden cambiar la configuración.",
+            show_alert=True,
+        )
+        return False
+    return True
+
+
 @settings_router.message(Command("settings"))
+@error_tracker.track_errors(handler_name="cmd_settings")
 async def cmd_settings(message: Message, player: Player, bot: Bot) -> None:
+    if not message.from_user:
+        return
 
     if message.chat.type == "private":
         await message.reply("❌ Este comando solo funciona en grupos.")
@@ -69,7 +87,10 @@ async def cmd_settings(message: Message, player: Player, bot: Bot) -> None:
 
 
 @settings_router.callback_query(F.data == "settings_main")
+@error_tracker.track_errors(handler_name="back_to_main")
 async def back_to_main(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     config = await _get_config(callback.message.chat.id)
     cats = _parse_categories(config.categories)
     markup = settings_main_keyboard(
@@ -90,7 +111,10 @@ async def back_to_main(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data == "settings_rondas")
+@error_tracker.track_errors(handler_name="show_rounds")
 async def show_rounds(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     config = await _get_config(callback.message.chat.id)
     markup = settings_rounds_keyboard(config.default_rounds)
     await callback.message.edit_text(
@@ -103,7 +127,10 @@ async def show_rounds(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data.startswith("set_rondas:"))
+@error_tracker.track_errors(handler_name="set_rounds")
 async def set_rounds(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     value = int(callback.data.split(":", 1)[1])
     async with async_session_factory() as session:
         repo = GroupConfigRepository(session)
@@ -119,7 +146,10 @@ async def set_rounds(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data == "settings_tiempo")
+@error_tracker.track_errors(handler_name="show_time")
 async def show_time(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     config = await _get_config(callback.message.chat.id)
     markup = settings_time_keyboard(config.round_time)
     await callback.message.edit_text(
@@ -132,7 +162,10 @@ async def show_time(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data.startswith("set_tiempo:"))
+@error_tracker.track_errors(handler_name="set_time")
 async def set_time(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     value = int(callback.data.split(":", 1)[1])
     async with async_session_factory() as session:
         repo = GroupConfigRepository(session)
@@ -147,7 +180,10 @@ async def set_time(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data == "settings_cats")
+@error_tracker.track_errors(handler_name="show_cats")
 async def show_cats(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     config = await _get_config(callback.message.chat.id)
     selected = _parse_categories(config.categories)
     markup = settings_cats_keyboard(ALL_CATEGORIES, selected)
@@ -161,7 +197,10 @@ async def show_cats(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data.startswith("toggle_cat:"))
+@error_tracker.track_errors(handler_name="toggle_cat")
 async def toggle_cat(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     cat = callback.data.split(":", 1)[1]
     async with async_session_factory() as session:
         repo = GroupConfigRepository(session)
@@ -197,7 +236,10 @@ async def toggle_cat(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data == "toggle_n")
+@error_tracker.track_errors(handler_name="toggle_n")
 async def toggle_n(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     async with async_session_factory() as session:
         repo = GroupConfigRepository(session)
         config = await repo.get_or_create(callback.message.chat.id)
@@ -212,7 +254,10 @@ async def toggle_n(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data == "settings_mode")
+@error_tracker.track_errors(handler_name="show_mode")
 async def show_mode(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     config = await _get_config(callback.message.chat.id)
     current = config.validation_mode or "local"
     markup = settings_mode_keyboard(current)
@@ -228,7 +273,10 @@ async def show_mode(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data.startswith("set_mode:"))
+@error_tracker.track_errors(handler_name="set_mode")
 async def set_mode(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
     value = callback.data.split(":", 1)[1]
     async with async_session_factory() as session:
         repo = GroupConfigRepository(session)
@@ -243,6 +291,64 @@ async def set_mode(callback: CallbackQuery) -> None:
 
 
 @settings_router.callback_query(F.data == "settings_close")
+@error_tracker.track_errors(handler_name="settings_close")
 async def settings_close(callback: CallbackQuery) -> None:
     await callback.message.delete()
     await callback.answer()
+
+
+# ─── Preview ────────────────────────────────────────────────────────
+
+
+@settings_router.callback_query(F.data == "settings_preview")
+@error_tracker.track_errors(handler_name="settings_preview")
+async def settings_preview(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
+
+    config = await _get_config(callback.message.chat.id)
+    cats = _parse_categories(config.categories)
+    mode_label = dict(MODE_OPTIONS).get(config.validation_mode or "local", config.validation_mode or "local")
+
+    text = (
+        f"<b>📋 Configuración actual del grupo</b>\n\n"
+        f"🎯 <b>Rondas:</b> {config.default_rounds}\n"
+        f"⏱ <b>Tiempo:</b> {config.round_time}s\n"
+        f"📋 <b>Categorías ({len(cats)}):</b> {', '.join(cats)}\n"
+        f"🔤 <b>Ñ:</b> {'Sí' if config.include_n else 'No'}\n"
+        f"⚡ <b>Modo:</b> {mode_label}\n"
+        f"🌐 <b>Idioma:</b> {config.language}"
+    )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Volver", callback_data="settings_main")]
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+# ─── Reset ──────────────────────────────────────────────────────────
+
+
+@settings_router.callback_query(F.data == "settings_reset")
+@error_tracker.track_errors(handler_name="settings_reset")
+async def settings_reset(callback: CallbackQuery) -> None:
+    if not await _require_admin(callback):
+        return
+
+    async with async_session_factory() as session:
+        repo = GroupConfigRepository(session)
+        config = await repo.get_or_create(callback.message.chat.id)
+        config.default_rounds = 5
+        config.round_time = 60
+        config.categories = _serialize_categories(list(ALL_CATEGORIES))
+        config.include_n = False
+        config.validation_mode = "local"
+        await session.commit()
+
+    await callback.answer("✅ Configuración restablecida a valores predeterminados.")
+    await back_to_main(callback)

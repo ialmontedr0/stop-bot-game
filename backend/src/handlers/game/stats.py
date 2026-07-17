@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from aiogram import Bot, Router
 from aiogram.filters import Command
@@ -7,21 +7,31 @@ from aiogram.types import Message
 from aiogram.utils.markdown import hbold
 from sqlalchemy import Date, cast, desc, func, select
 
+from src.core.text_utils import utcnow
 from src.db.engine import async_session_factory
 from src.db.models import Game, GamePlayer, Player
+from src.services.error_tracker import error_tracker
+
+_DAY_NAMES_ES = {
+    0: "Lun", 1: "Mar", 2: "Mié", 3: "Jue",
+    4: "Vie", 5: "Sáb", 6: "Dom",
+}
 
 logger = logging.getLogger(__name__)
 stats_router = Router()
 
 
 @stats_router.message(Command("stats"))
+@error_tracker.track_errors(handler_name="cmd_stats")
 async def cmd_stats(message: Message, bot: Bot) -> None:
+    if not message.from_user:
+        return
     if message.chat.type == "private":
         await message.reply("❌ Este comando solo funciona en grupos.")
         return
 
     group_chat_id = message.chat.id
-    status_msg = await message.reply("⏳ Generando estadisticas...")
+    status_msg = await message.reply("⏳ Generando estadísticas...")
 
     try:
         async with async_session_factory() as session:
@@ -54,7 +64,7 @@ async def cmd_stats(message: Message, bot: Bot) -> None:
             top_players = rows.all()
 
             # Actividad reciente: partidas de los últimos 7 días
-            week_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+            week_ago = utcnow() - timedelta(days=7)
             recent_games_stmt = (
                 select(func.count(Game.id))
                 .where(Game.group_chat_id == group_chat_id)
@@ -76,7 +86,7 @@ async def cmd_stats(message: Message, bot: Bot) -> None:
                 .order_by(cast(Game.finished_at, Date))
             )
             daily_rows = await session.execute(daily_stmt)
-            daily_counts = [(row.day.strftime("%a"), row[1]) for row in daily_rows]
+            daily_counts = [(_DAY_NAMES_ES.get(row.day.weekday(), "???"), row[1]) for row in daily_rows]
 
         # Enviar gráfico de actividad
         if daily_counts:

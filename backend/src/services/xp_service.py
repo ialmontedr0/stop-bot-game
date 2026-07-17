@@ -150,6 +150,109 @@ class XPService:
             }
 
     @staticmethod
+    async def _update_streak_in_session(session, player_id: int) -> dict:
+        stmt = select(Streak).where(Streak.player_id == player_id)
+        result = await session.execute(stmt)
+        streak = result.scalar_one_or_none()
+        if not streak:
+            streak = Streak(player_id=player_id, current_streak=0, max_streak=0)
+            session.add(streak)
+
+        today = date.today()
+        if streak.last_played_date is None:
+            streak.current_streak = 1
+        elif streak.last_played_date == today:
+            pass
+        elif streak.last_played_date == today - timedelta(days=1):
+            streak.current_streak += 1
+        else:
+            streak.current_streak = 1
+
+        if streak.current_streak > streak.max_streak:
+            streak.max_streak = streak.current_streak
+        streak.last_played_date = today
+
+        return {
+            "current_streak": streak.current_streak,
+            "max_streak": streak.max_streak,
+        }
+
+    @staticmethod
+    async def _award_game_xp_in_session(
+        session,
+        player_id: int,
+        final_position: int,
+        was_stopper: bool = False,
+        unique_answers: int = 0,
+        streak_bonus: int = 0,
+        multiplier: int = 1,
+    ) -> dict:
+        stmt = select(PlayerXP).where(PlayerXP.player_id == player_id)
+        result = await session.execute(stmt)
+        xp_record = result.scalar_one_or_none()
+        if not xp_record:
+            xp_record = PlayerXP(player_id=player_id)
+            session.add(xp_record)
+            await session.flush()
+            await session.refresh(xp_record)
+
+        old_level = xp_record.level
+
+        xp_gained = XP_PER_GAME
+        if final_position == 1:
+            xp_gained += XP_PER_WIN
+        if was_stopper:
+            xp_gained += XP_PER_STOP
+        xp_gained += unique_answers * XP_PER_UNIQUE
+        xp_gained += streak_bonus
+
+        xp_gained = int(xp_gained * multiplier)
+
+        xp_record.xp += xp_gained
+        xp_record.total_xp_earned += xp_gained
+        xp_record.level = _calculate_level(xp_record.total_xp_earned)
+
+        leveled_up = xp_record.level > old_level
+        new_title = RANK_TITLES.get(xp_record.level)
+
+        return {
+            "xp_gained": xp_gained,
+            "total_xp": xp_record.total_xp_earned,
+            "level": xp_record.level,
+            "leveled_up": leveled_up,
+            "title": new_title,
+            "multiplier": multiplier,
+        }
+
+    async def award_all_players(self, rankings: list[dict]) -> list[dict]:
+        from src.services.event_service import event_service
+
+        multiplier = await event_service.get_active_multiplier()
+        results = []
+        async with async_session_factory() as session:
+            for rank in rankings:
+                streak_info = await self._update_streak_in_session(
+                    session, rank["player_id"],
+                )
+                streak_bonus = (
+                    XP_STREAK_BONUS
+                    if streak_info["current_streak"] >= 3
+                    else 0
+                )
+                xp_info = await self._award_game_xp_in_session(
+                    session,
+                    player_id=rank["player_id"],
+                    final_position=rank["position"],
+                    was_stopper=rank["was_stopper"],
+                    unique_answers=rank["unique_answers"],
+                    streak_bonus=streak_bonus,
+                    multiplier=multiplier,
+                )
+                results.append({**xp_info, "telegram_id": rank["telegram_id"]})
+            await session.commit()
+        return results
+
+    @staticmethod
     async def get_profile(player_id: int) -> dict | None:
         async with async_session_factory() as session:
             stmt = select(PlayerXP).where(PlayerXP.player_id == player_id)

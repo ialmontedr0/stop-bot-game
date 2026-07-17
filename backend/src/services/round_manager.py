@@ -4,32 +4,36 @@ import random
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 
+import structlog
 from aiogram import Bot
 from aiogram.exceptions import (
     TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNetworkError,
     TelegramRetryAfter,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from src.core.text_utils import utcnow
 from src.db.engine import async_session_factory
 from src.db.models import GamePlayer, Player
 from src.db.repositories.game_repository import GameRepository
 from src.db.repositories.round_repository import RoundRepository
 from src.image_generator import generate_podium_image
 from src.keyboards.round import inter_round_keyboard, letter_keyboard, stop_keyboard
-from src.services.score_engine import FIRST_COMPLETER_BONUS, ScoreEngine
+from src.services.game_state_store import GameStateStore
+from src.services.photo_cache import photo_cache
+from src.services.score_engine import FIRST_COMPLETER_BONUS, UNIQUE_POINTS, ScoreEngine
 from src.services.spell_corrector import get_corrector
 from src.services.xp_service import xp_service
-
-import structlog
 
 logger = structlog.get_logger(__name__)
 
 NUM_STOP_BUTTONS = 10
 ROUND_DURATION = 60
 TOTAL_ROUNDS = 5
+LETTER_TIMEOUT = 15
 
 CATEGORIES = [
     "Nombre",
@@ -41,6 +45,17 @@ CATEGORIES = [
     "Animal",
     "Cosa",
 ]
+
+_PLURAL_MAP: dict[str, str] = {
+    "paises": "País",
+    "colores": "Color",
+    "frutas": "Fruta",
+    "animales": "Animal",
+    "artistas": "Artista",
+    "cosas": "Cosa",
+    "nombres": "Nombre",
+    "apellidos": "Apellido",
+}
 
 CATEGORIES_DISPLAY = "\n".join(f"  <b>{cat}:</b> ..." for cat in CATEGORIES)
 PLACEHOLDER = "\n".join(f"{cat}: ..." for cat in CATEGORIES)
@@ -85,11 +100,56 @@ class RoundState:
 
 
 class RoundManager:
-    def __init__(self) -> None:
+    def __init__(self, store: GameStateStore | None = None) -> None:
         self._rounds: dict[int, RoundState] = {}
         self._rounds_by_group: dict[int, int] = {}
         self._letter_pending: dict[int, RoundState] = {}
         self._locks: dict[int, asyncio.Lock] = {}
+        self._cancelled: dict[int, bool] = {}
+        self._closing: set[int] = set()
+        self._unique_answers: dict[int, dict[int, int]] = {}
+        self._store = store
+
+    @staticmethod
+    def _safe_task(coro) -> asyncio.Task:
+        """Crea un task con error logging para fire-and-forget."""
+        task = asyncio.create_task(coro)
+
+        async def _log_error(t):
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Fire-and-forget task falló")
+
+        asyncio.create_task(_log_error(task))
+        return task
+
+    def get_active_game_ids(self) -> list[int]:
+        """Retorna copia de los game_ids con ronda activa (público, thread-safe)."""
+        return list(self._rounds.keys())
+
+    def set_store(self, store: GameStateStore) -> None:
+        self._store = store
+
+    async def restore_from_store(self) -> int:
+        if self._store is None:
+            return 0
+        rounds = await self._store.get_all_rounds()
+        for gid, state in rounds.items():
+            self._rounds[gid] = state
+        rbg = await self._store.get_all_rounds_by_group()
+        self._rounds_by_group.update(rbg)
+        pending = await self._store.get_all_letter_pending()
+        for gid, state in pending.items():
+            self._letter_pending[gid] = state
+        count = len(rounds) + len(pending)
+        if count:
+            logger.info(
+                "Restaurados %d rounds + %d letter_pending desde store", len(rounds), len(pending)
+            )
+        return count
 
     def _lock_for(self, game_id: int) -> asyncio.Lock:
         if game_id not in self._locks:
@@ -190,8 +250,11 @@ class RoundManager:
         self._rounds_by_group[group_chat_id] = game_id
         # No popear _letter_pending — evita race condition con handle_letter_selection
         # self._letter_pending.pop(game_id, None)
+        if self._store:
+            await self._store.set_round(state)
+            await self._store.set_rounds_by_group(group_chat_id, game_id)
         if state.validation_mode in ("ai", "hybrid"):
-            get_corrector().reset_api_counter()
+            get_corrector().reset_api_counter(group_chat_id=group_chat_id, game_id=game_id)
         state.timer_task = asyncio.create_task(self._round_timer(state, bot))
         logger.info(
             "Ronda iniciada",
@@ -209,6 +272,12 @@ class RoundManager:
         text: str,
         bot: Bot,
     ) -> bool:
+        logger.info(
+            "submit_answers ENTER game=%s player_tg=%s text_preview=%s",
+            game_id,
+            player.telegram_id,
+            text[:50],
+        )
         state = self.get_active_round(game_id)
         if not state:
             logger.info("submit_answers: no active round for game %s", game_id)
@@ -226,39 +295,22 @@ class RoundManager:
             if not val or val.lower() in _EMPTY_SYMBOLS:
                 parsed[slot] = ""
 
-        # NUEVO: validar respuestas con SpellCorrector en modo hybrid/ai
-        # Las respuestas invalidas semanticamente se vacian (0 puntos)
+        # Determinar si todas las categorías tienen contenido real
+        # (antes de AI validation, para que first_completer no dependa de la IA)
+        has_real_content = all(len(v.strip()) >= 2 for v in parsed.values())
 
-        from src.services.spell_corrector import get_corrector
+        send_stop = False
 
-        corrector = get_corrector()
-        effective_validation_mode = state.validation_mode or corrector.mode
-        if effective_validation_mode in ("ai", "hybrid"):
+        logger.info(
+            "submit_answers: fase1 DB save START game=%s player=%s cats=%s",
+            game_id,
+            player.telegram_id,
+            list(parsed.keys()),
+        )
 
-            async def _validate_slot(slot: str, raw_text: str) -> tuple[str, str, bool]:
-                if raw_text and raw_text.strip():
-                    is_valid = await corrector.validate(
-                        raw_text, slot, mode=effective_validation_mode
-                    )
-                    return slot, raw_text, is_valid
-                return slot, raw_text, True
-
-            tasks = [_validate_slot(slot, raw_text) for slot, raw_text in list(parsed.items())]
-            results = await asyncio.gather(*tasks)
-            for slot, raw_text, is_valid in results:
-                if not is_valid:
-                    parsed[slot] = ""
-                    logger.info(
-                        "ia_rejection",
-                        extra={
-                            "game_id": game_id,
-                            "player_id": player.id,
-                            "telegram_id": player.telegram_id,
-                            "category": slot,
-                            "rejected_text": raw_text,
-                        },
-                    )
-
+        # 1. Persistir respuestas en BD inmediatamente (antes de validacion AI)
+        #    para evitar que AI lenta (hybrid mode) pierda las respuestas si
+        #    el timer de la ronda expira mientras tanto.
         try:
             async with async_session_factory() as session:
                 repo = RoundRepository(session)
@@ -280,15 +332,62 @@ class RoundManager:
             )
             return False
 
-        send_stop = False
+        logger.info(
+            "submit_answers: fase1 DB save OK game=%s player=%s", game_id, player.telegram_id
+        )
+
+        # 2. Validacion IA opcional — batch: 1 llamada para todas las categorias
+        from src.services.spell_corrector import get_corrector
+
+        corrector = get_corrector()
+        effective_validation_mode = state.validation_mode or corrector.mode
+        if effective_validation_mode in ("ai", "hybrid"):
+            validation_results = await corrector.validate_batch(
+                dict(parsed),
+                game_id=game_id,
+                mode=effective_validation_mode,
+                group_chat_id=state.group_chat_id,
+            )
+            for slot, is_valid in validation_results.items():
+                if not is_valid:
+                    raw_text = parsed.get(slot, "")
+                    parsed[slot] = ""
+                    logger.info(
+                        "ia_rejection",
+                        extra={
+                            "game_id": game_id,
+                            "player_id": player.id,
+                            "telegram_id": player.telegram_id,
+                            "category": slot,
+                            "rejected_text": raw_text,
+                        },
+                    )
+
+        logger.info("submit_answers: fase2 AI done game=%s player=%s", game_id, player.telegram_id)
+
+        # 3. Lock: actualizar estado en memoria
+        if self._cancelled.get(game_id):
+            return False
         async with self._lock_for(game_id):
+            if self._cancelled.get(game_id):
+                return False
+            if self.get_active_round(game_id) is not state:
+                logger.info(
+                    "submit_answers: round already closed for game %s - state=%s _rounds_has=%s",
+                    game_id,
+                    id(state) if state else None,
+                    game_id in self._rounds,
+                )
+                return False
             is_first = player.telegram_id not in state.submitted_player_ids
             state.submitted_player_ids.add(player.telegram_id)
             if is_first:
                 state.submission_order.append(player.telegram_id)
+            if self._store:
+                self._safe_task(self._store.set_round(state))
             self._debounced_update(state, bot)
 
-            all_filled = len(parsed) == len(state.categories)
+            all_filled = len(parsed) == len(state.categories) and has_real_content
             logger.info(
                 "submit_answers",
                 extra={
@@ -324,12 +423,34 @@ class RoundManager:
                     )
 
             all_submitted = await self._check_all_submitted(state)
+
+            if send_stop:
+                try:
+                    await self._send_stop_message(state, bot)
+                except Exception:
+                    logger.exception(
+                        "Error enviando stop message para game %s",
+                        game_id,
+                    )
         # Lock liberado aqui
-        if send_stop:
-            await self._send_stop_message(state, bot)
+        result = all_filled and state.first_completer_id == player.telegram_id
+        logger.info(
+            "submit_answers EXIT game=%s player_tg=%s result=%s send_stop=%s all_submitted=%s",
+            game_id,
+            player.telegram_id,
+            result,
+            send_stop,
+            all_submitted,
+        )
         if all_submitted:
-            await self._close_round(game_id, "all_submitted", bot)
-        return all_filled and state.first_completer_id == player.telegram_id
+            try:
+                await self._close_round(game_id, "all_submitted", bot)
+            except Exception:
+                logger.exception(
+                    "Error cerrando ronda para game %s (all_submitted)",
+                    game_id,
+                )
+        return result
 
     async def press_stop(
         self,
@@ -338,7 +459,14 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
+        if self._cancelled.get(game_id):
+            await callback.answer("❌ Partida cancelada.", show_alert=True)
+            return
+        should_close = False
         async with self._lock_for(game_id):
+            if self._cancelled.get(game_id):
+                await callback.answer("❌ Partida cancelada.", show_alert=True)
+                return
             state = self.get_active_round(game_id)
             if not state:
                 await callback.answer("❌ Esta ronda ya terminó.", show_alert=False)
@@ -354,42 +482,57 @@ class RoundManager:
             state.stop_presses += 1
 
             if state.stop_presses >= NUM_STOP_BUTTONS:
+                should_close = True
                 with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
                     await bot.edit_message_text(
                         self._format_stop_message(NUM_STOP_BUTTONS),
                         chat_id=state.stop_message_chat_id,
                         message_id=state.stop_message_id,
                     )
-                await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
-                await self._close_round(game_id, "stop", bot)
-                return
+            else:
+                progress = state.stop_presses
+                await callback.answer(f"⏹ Stop {progress}/{NUM_STOP_BUTTONS}", show_alert=False)
+                with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
+                    await bot.edit_message_text(
+                        self._format_stop_message(progress),
+                        chat_id=state.stop_message_chat_id,
+                        message_id=state.stop_message_id,
+                        reply_markup=stop_keyboard(game_id, progress + 1),
+                    )
 
-        progress = state.stop_presses
-        await callback.answer(f"⏹ Stop {progress}/{NUM_STOP_BUTTONS}", show_alert=False)
-
-        with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
-            await bot.edit_message_text(
-                self._format_stop_message(progress),
-                chat_id=state.stop_message_chat_id,
-                message_id=state.stop_message_id,
-                reply_markup=stop_keyboard(game_id, progress + 1),
-            )
+        # Lock liberado — cerrar ronda fuera del lock (evita deadlock reentrante)
+        if should_close:
+            await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
+            await self._close_round(game_id, "stop", bot)
 
     async def _close_round(self, game_id: int, reason: str, bot: Bot) -> None:
-        # Pop del state y cancelación de timers bajo el lock
+        if self._cancelled.get(game_id):
+            return
+        # Flag atómico bajo el lock para evitar doble ejecución (G1)
         async with self._lock_for(game_id):
-            state = self._rounds.pop(game_id, None)
-            if not state:
+            if self._cancelled.get(game_id):
                 return
-            if state.timer_task and not state.timer_task.done() and reason != "timeout":
-                state.timer_task.cancel()
-            if state.letter_timeout_task and not state.letter_timeout_task.done():
-                state.letter_timeout_task.cancel()
-                state.letter_timeout_task = None
-            self._rounds_by_group.pop(state.group_chat_id, None)
+            if game_id in self._closing:
+                logger.warning("_close_round ya en progreso para game %s, ignorando", game_id)
+                return
+            self._closing.add(game_id)
+        try:
+            # Pop del state y cancelación de timers bajo el lock
+            async with self._lock_for(game_id):
+                state = self._rounds.pop(game_id, None)
+                if not state:
+                    return
+                if state.timer_task and not state.timer_task.done() and reason != "timeout":
+                    state.timer_task.cancel()
+                if state.letter_timeout_task and not state.letter_timeout_task.done():
+                    state.letter_timeout_task.cancel()
+                    state.letter_timeout_task = None
+                self._rounds_by_group.pop(state.group_chat_id, None)
 
-        # A partir de aquí NO hay lock — operaciones lentas de Telegram
-        await self._do_close_round_telegram(state, reason, bot)
+            # A partir de aquí NO hay lock — operaciones lentas de Telegram
+            await self._do_close_round_telegram(state, reason, bot)
+        finally:
+            self._closing.discard(game_id)
 
     async def _do_close_round_telegram(self, state: RoundState, reason: str, bot: Bot) -> None:
         reason_texts = {
@@ -417,14 +560,62 @@ class RoundManager:
 
         round_scores: dict[int, int] = {}
         if round_id is not None:
-            try:
-                round_scores = await self._persist_round_scores(round_id, state, reason=reason)
-            except Exception:
-                logger.exception(
-                    "Error en _persist_round_scores para game=%s round=%s",
+            for attempt in range(3):
+                try:
+                    round_scores = await self._persist_round_scores(
+                        round_id,
+                        state,
+                        reason=reason,
+                    )
+                    break
+                except Exception:
+                    logger.exception(
+                        "Error en _persist_round_scores (intento %d/3) para game=%s round=%s",
+                        attempt + 1,
+                        state.game_id,
+                        state.round_number,
+                    )
+                    if attempt < 2:
+                        await asyncio.sleep(0.5 * (2**attempt))
+            if not round_scores:
+                logger.critical(
+                    "Fallo permanente en _persist_round_scores "
+                    "para game=%s round=%s — cancelando juego",
                     state.game_id,
                     state.round_number,
                 )
+                state.cancelled = True
+                try:  # noqa: SIM105
+                    await bot.send_message(
+                        state.group_chat_id,
+                        "❌ Ocurrió un error al guardar los puntajes. La partida se cancelará.",
+                    )
+                except Exception:
+                    pass
+                # Marcar como cancelado en BD para que nadie quede atascado
+                try:
+                    async with async_session_factory() as session:
+                        repo = GameRepository(session)
+                        db_game = await repo.get_by_id(state.game_id)
+                        if db_game and db_game.status not in ("finished", "cancelled"):
+                            db_game.status = "cancelled"
+                            db_game.finished_at = utcnow()
+                            await session.commit()
+                except Exception:
+                    logger.exception(
+                        "Error adicional al cancelar game %s en BD tras persist_fallback",
+                        state.game_id,
+                    )
+                # Limpiar estado en memoria
+                self._rounds.pop(state.game_id, None)
+                self._rounds_by_group.pop(state.group_chat_id, None)
+                self._letter_pending.pop(state.game_id, None)
+                self._locks.pop(state.game_id, None)
+                self._unique_answers.pop(state.game_id, None)
+                if self._store:
+                    asyncio.create_task(self._store.delete_round(state.game_id))
+                    asyncio.create_task(self._store.delete_letter_pending(state.game_id))
+                return
         # Asegurar que todas las palabras aprendidas se persistan antes de continuar
         try:
             from src.services.spell_corrector import get_corrector
@@ -488,8 +679,14 @@ class RoundManager:
                         )
 
             self._letter_pending[state.game_id] = state
+            if self._store:
+                await self._store.set_letter_pending(state)
+                await self._store.delete_round(state.game_id)
+                await self._store.delete_rounds_by_group(state.group_chat_id)
             if state.cancelled:
                 self._letter_pending.pop(state.game_id, None)
+                if self._store:
+                    await self._store.delete_letter_pending(state.game_id)
                 return
             await self._transition_next_round(state, bot)
         except TelegramRetryAfter as e:
@@ -505,6 +702,18 @@ class RoundManager:
                 state.game_id,
                 state.round_number,
             )
+            # No popear _letter_pending — el letter_timeout reintentará (D2)
+            # Marcar juego como cancelado para evitar estado limbo
+            try:
+                async with async_session_factory() as session:
+                    repo = GameRepository(session)
+                    db_game = await repo.get_by_id(state.game_id)
+                    if db_game and db_game.status not in ("finished", "cancelled"):
+                        db_game.status = "cancelled"
+                        db_game.finished_at = utcnow()
+                        await session.commit()
+            except Exception:
+                logger.exception("Error adicional al cancelar game %s en fallback D2", state.game_id)
 
     async def _transition_next_round(
         self,
@@ -567,16 +776,28 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
+        if self._cancelled.get(game_id):
+            await callback.answer("❌ Partida cancelada.", show_alert=True)
+            return
         async with self._lock_for(game_id):
+            if self._cancelled.get(game_id):
+                await callback.answer("❌ Partida cancelada.", show_alert=True)
+                return
             state = self._letter_pending.get(game_id)
             if not state:
                 active = self._rounds.get(game_id)
                 if active:
                     await callback.answer(
-                        "⏳ La ronda ya está en curso. Esperá a que termine.", show_alert=True
+                        "⏳ La ronda ya está en curso. Espera a que termine.", show_alert=True
                     )
                 else:
                     await callback.answer("❌ Esta partida ya no está activa.", show_alert=True)
+                return
+            if game_id in self._rounds:
+                await callback.answer(
+                    "⏳ La ronda ya está en curso. Espera a que termine.",
+                    show_alert=True,
+                )
                 return
             if player_id != state.leader_id:
                 await callback.answer(
@@ -599,16 +820,28 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
+        if self._cancelled.get(game_id):
+            await callback.answer("❌ Partida cancelada.", show_alert=True)
+            return
         async with self._lock_for(game_id):
+            if self._cancelled.get(game_id):
+                await callback.answer("❌ Partida cancelada.", show_alert=True)
+                return
             state = self._letter_pending.get(game_id)
             if not state:
                 active = self._rounds.get(game_id)
                 if active:
                     await callback.answer(
-                        "⏳ La ronda ya está en curso. Esperá a que termine.", show_alert=True
+                        "⏳ La ronda ya está en curso. Espera a que termine.", show_alert=True
                     )
                 else:
                     await callback.answer("❌ Esta partida ya no está activa.", show_alert=True)
+                return
+            if game_id in self._rounds:
+                await callback.answer(
+                    "⏳ La ronda ya está en curso. Espera a que termine.",
+                    show_alert=True,
+                )
                 return
             if player_id != state.host_telegram_id:
                 await callback.answer(
@@ -624,7 +857,9 @@ class RoundManager:
             await callback.answer(
                 "⏹ Partida detenida. Calculando puntuaciones...", show_alert=False
             )
-            await self._end_game(state, bot)
+
+        # Lock liberado - operaciones lentas fuera de la seccion critica
+        await self._end_game(state, bot)
 
     async def _prompt_letter_selection(self, state: RoundState, bot: Bot) -> None:
         if state.first_completer_id:
@@ -657,7 +892,13 @@ class RoundManager:
         state.letter_timeout_task = asyncio.create_task(self._letter_timeout(msg, bot, state))
 
     async def _letter_timeout(self, msg, bot, state):
-        await asyncio.sleep(15)
+        await asyncio.sleep(LETTER_TIMEOUT)
+        # Adquirir el lock para verificar/pop atómicamente: si handle_letter_selection
+        # ya ganó la carrera, _letter_pending estará vacío y salimos sin acción.
+        async with self._lock_for(state.game_id):
+            if state.game_id not in self._letter_pending:
+                return
+            self._letter_pending.pop(state.game_id, None)
         with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await msg.delete()
         letter = random.choice(get_alphabet(state.include_n))
@@ -671,7 +912,13 @@ class RoundManager:
         callback,
         bot: Bot,
     ) -> None:
+        if self._cancelled.get(game_id):
+            await callback.answer("❌ Partida cancelada.", show_alert=True)
+            return
         async with self._lock_for(game_id):
+            if self._cancelled.get(game_id):
+                await callback.answer("❌ Partida cancelada.", show_alert=True)
+                return
             state = self._rounds.get(game_id) or self._letter_pending.get(game_id)
             if not state:
                 await callback.answer("❌ Partida no activa.", show_alert=True)
@@ -682,9 +929,16 @@ class RoundManager:
                 await callback.answer("⏳ Ya hay una ronda en curso.", show_alert=True)
                 return
 
+            if letter not in get_alphabet(include_n=state.include_n):
+                await callback.answer("❌ Letra inválida.", show_alert=True)
+                return
+
             if player_id != state.leader_id:
                 await callback.answer("❌ Solo el líder puede elegir la letra.", show_alert=True)
                 return
+
+            # Reclamar ownership atómicamente bajo el lock (D1)
+            self._letter_pending.pop(game_id, None)
 
             if state.letter_timeout_task and not state.letter_timeout_task.done():
                 state.letter_timeout_task.cancel()
@@ -692,31 +946,31 @@ class RoundManager:
 
             next_number = state.round_number + 1
 
-            await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
+        # ── Salimos del lock antes de I/O pesado ──
+        await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
 
-            # Eliminar el teclado de letras
-            if state.letter_message_id:
-                with contextlib.suppress(TelegramBadRequest):
-                    await bot.delete_message(
-                        chat_id=state.letter_message_chat_id,
-                        message_id=state.letter_message_id,
-                    )
+        if state.letter_message_id:
+            with contextlib.suppress(TelegramBadRequest):
+                await bot.delete_message(
+                    chat_id=state.letter_message_chat_id,
+                    message_id=state.letter_message_id,
+                )
 
-            await self.start_round(
-                game_id=game_id,
-                group_chat_id=state.group_chat_id,
-                round_number=next_number,
-                letter=letter,
-                total_players=state.total_players,
-                total_rounds=state.total_rounds,
-                player_names=state.player_names,
-                bot=bot,
-                host_telegram_id=state.host_telegram_id,
-                round_time=state.round_time,
-                categories=state.categories,
-                include_n=state.include_n,
-                validation_mode=state.validation_mode,
-            )
+        await self.start_round(
+            game_id=game_id,
+            group_chat_id=state.group_chat_id,
+            round_number=next_number,
+            letter=letter,
+            total_players=state.total_players,
+            total_rounds=state.total_rounds,
+            player_names=state.player_names,
+            bot=bot,
+            host_telegram_id=state.host_telegram_id,
+            round_time=state.round_time,
+            categories=state.categories,
+            include_n=state.include_n,
+            validation_mode=state.validation_mode,
+        )
 
         # Countdown fuera del lock (solo envio de mensajes)
         countdown = await bot.send_message(
@@ -726,6 +980,48 @@ class RoundManager:
         await asyncio.sleep(5)
         with contextlib.suppress(TelegramBadRequest):
             await countdown.delete()
+
+    async def handle_skip_letter(
+        self,
+        game_id: int,
+        player_id: int,
+        callback,
+        bot: Bot,
+    ) -> None:
+        if self._cancelled.get(game_id):
+            await callback.answer("❌ Partida cancelada.", show_alert=True)
+            return
+        async with self._lock_for(game_id):
+            if self._cancelled.get(game_id):
+                await callback.answer("❌ Partida cancelada.", show_alert=True)
+                return
+            state = self._letter_pending.get(game_id)
+            if not state:
+                await callback.answer("❌ No hay selección de letra activa.", show_alert=True)
+                return
+
+            self._letter_pending.pop(game_id, None)
+
+            if player_id != state.leader_id:
+                await callback.answer("❌ Solo el líder puede saltar.", show_alert=True)
+                return
+
+            if state.letter_timeout_task and not state.letter_timeout_task.done():
+                state.letter_timeout_task.cancel()
+                state.letter_timeout_task = None
+
+            letter = random.choice(get_alphabet(state.include_n))
+
+            await callback.answer(f"🎲 Letra aleatoria: {letter}", show_alert=False)
+
+            if state.letter_message_id:
+                with contextlib.suppress(TelegramBadRequest):
+                    await bot.delete_message(
+                        chat_id=state.letter_message_chat_id,
+                        message_id=state.letter_message_id,
+                    )
+
+            await self._start_next_round_with_letter(state, letter, bot)
 
     async def _start_next_round_with_letter(
         self,
@@ -760,81 +1056,119 @@ class RoundManager:
             db_game = await repo.get_by_id(state.game_id)
             if db_game:
                 db_game.status = "finished"
-                db_game.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                db_game.finished_at = utcnow()
                 await session.commit()
 
             winners = await self._get_standings(state.game_id)
 
-        # === Otorgar XP, streaks, leaderboard ===
+        # === Otorgar XP, streaks, leaderboard (batch) ===
         xp_results = {}
-        for position, (telegram_id, score) in enumerate(winners):
-            # Buscar player_id interno
-            async with async_session_factory() as session:
-                stmt = select(Player).where(Player.telegram_id == telegram_id)
-                result = await session.execute(stmt)
-                player = result.scalar_one_or_none()
+        telegram_ids = [tid for tid, _ in winners]
+        async with async_session_factory() as session:
+            stmt = select(Player).where(Player.telegram_id.in_(telegram_ids))
+            result = await session.execute(stmt)
+            players_map: dict[int, Player] = {p.telegram_id: p for p in result.scalars().all()}
+
+        if players_map:
+            rankings = []
+            for position, (telegram_id, score) in enumerate(winners):
+                player = players_map.get(telegram_id)
                 if not player:
                     continue
+                rankings.append(
+                    {
+                        "player_id": player.id,
+                        "telegram_id": telegram_id,
+                        "position": position + 1,
+                        "was_stopper": (
+                            telegram_id == state.first_completer_id if state else False
+                        ),
+                        "unique_answers": self._unique_answers.get(state.game_id, {}).get(telegram_id, 0),
+                    }
+                )
 
-            # Streaks
-            await xp_service.update_streak(player.id)
+            xp_results_list = await xp_service.award_all_players(rankings)
+            xp_results = {r["telegram_id"]: r for r in xp_results_list}
 
-            # XP
-            was_stopper = telegram_id == state.first_completer_id if state else False
-            # unique_answers: contar respuestas unicas de ese jugador en la ultima ronda
-            unique_answers = 0  # Simplificado idealmente contar desde details
-            xp_info = await xp_service.award_game_xp(
-                player_id=player.id,
-                final_position=position + 1,
-                was_stopper=was_stopper,
-                unique_answers=unique_answers,
+        # Leaderboard: batch upsert + recalculate ranks en una sola sesión
+        async with async_session_factory() as session:
+            from datetime import date, timedelta
+
+            from sqlalchemy import desc
+
+            from src.db.models import WeeklyLeaderboard
+
+            ws = date.today() - timedelta(days=date.today().weekday())
+            for position, (telegram_id, score) in enumerate(winners):
+                player = players_map.get(telegram_id)
+                if not player:
+                    continue
+                stmt = select(WeeklyLeaderboard).where(
+                    WeeklyLeaderboard.player_id == player.id,
+                    WeeklyLeaderboard.week_start == ws,
+                    WeeklyLeaderboard.group_chat_id == state.group_chat_id,
+                )
+                result = await session.execute(stmt)
+                entry = result.scalar_one_or_none()
+                if entry:
+                    entry.total_score += score
+                    entry.games_played += 1
+                else:
+                    entry = WeeklyLeaderboard(
+                        player_id=player.id,
+                        group_chat_id=state.group_chat_id,
+                        week_start=ws,
+                        total_score=score,
+                        games_played=1,
+                    )
+                    session.add(entry)
+
+            stmt = (
+                select(WeeklyLeaderboard)
+                .where(
+                    WeeklyLeaderboard.week_start == ws,
+                    WeeklyLeaderboard.group_chat_id == state.group_chat_id,
+                )
+                .order_by(desc(WeeklyLeaderboard.total_score))
             )
-            xp_results[telegram_id] = xp_info
+            result = await session.execute(stmt)
+            entries = list(result.scalars().all())
+            for i, entry in enumerate(entries):
+                entry.rank = i + 1
 
-            # Leaderboard semanal
-            from src.services.leaderboard import leaderboard_service
-
-            await leaderboard_service.upsert_player(
-                player_id=player.id,
-                score_to_add=score,
-                group_chat_id=state.group_chat_id,
+            await session.commit()
+            logger.info(
+                "Ranks recalculados para semana %s (group=%s): %s entries",
+                ws,
+                state.group_chat_id,
+                len(entries),
             )
-
-        # === Recalcular ranks semanales ===
-        from src.db.repositories.leaderboard_repository import LeaderboardRepository
-
-        await LeaderboardRepository.recalculate_ranks(group_chat_id=state.group_chat_id)
 
         podium_data = [
             (state.player_names.get(pid, f"Jugador {pid}"), score) for pid, score in winners[:5]
         ]
 
         # Descargar fotos de perfil para top 3
-        from io import BytesIO
-
-        from PIL import Image as PILImage
 
         profile_photos = []
         for pid, _ in winners[:3]:
-            try:
-                user_photos = await bot.get_user_profile_photos(user_id=pid, limit=1)
-                if user_photos.total_count > 0:
-                    file_id = user_photos.photos[0][-1].file_id
-                    file = await bot.get_file(file_id)
-                    photo_bytes_io = await bot.download_file(file.file_path)
-                    photo_data = photo_bytes_io.read()
-                    profile_photos.append(PILImage.open(BytesIO(photo_data)).convert("RGBA"))
-                else:
-                    profile_photos.append(None)
-            except Exception:
-                profile_photos.append(None)
+            photo = await photo_cache.get_photo(bot, pid)
+            profile_photos.append(photo)
 
         podium_bytes = generate_podium_image(podium_data, state.round_number, profile_photos)
         if podium_bytes:
             from aiogram.types import BufferedInputFile
 
             photo = BufferedInputFile(podium_bytes, filename="podium.png")
-            await bot.send_photo(state.group_chat_id, photo=photo)
+            for retry_n in range(3):
+                try:
+                    await bot.send_photo(state.group_chat_id, photo=photo)
+                    break
+                except (TelegramRetryAfter, TelegramNetworkError) as exc:
+                    if retry_n < 2:
+                        await asyncio.sleep(getattr(exc, "retry_after", 1))
+                    else:
+                        raise
 
         lines = ["<b>🏆 ¡Partida finalizada!</b>", ""]
         if winners:
@@ -848,10 +1182,18 @@ class RoundManager:
                 if xp_info.get("leveled_up"):
                     title = xp_info.get("title", "")
                     title_text = f" | 🎖{title}" if title else ""
-                    await bot.send_message(
-                        state.group_chat_id,
-                        f"🎉 <b>{name} ha subido al nivel {xp_info['level']}!</b>{title_text}",
-                    )
+                    for retry_n in range(3):
+                        try:
+                            await bot.send_message(
+                                state.group_chat_id,
+                                f"🎉 <b>{name} ha subido al nivel {xp_info['level']}!</b>{title_text}",
+                            )
+                            break
+                        except (TelegramRetryAfter, TelegramNetworkError) as exc:
+                            if retry_n < 2:
+                                await asyncio.sleep(exc.retry_after)
+                            else:
+                                raise
         else:
             lines.append("  No hay puntuaciones registradas.")
 
@@ -865,7 +1207,15 @@ class RoundManager:
         lines.append("")
         lines.append("<i>Gracias por jugar 🛑 Stop!</i>")
 
-        await bot.send_message(state.group_chat_id, "\n".join(lines))
+        for retry_n in range(3):
+            try:
+                await bot.send_message(state.group_chat_id, "\n".join(lines))
+                break
+            except (TelegramRetryAfter, TelegramNetworkError) as exc:
+                if retry_n < 2:
+                    await asyncio.sleep(exc.retry_after)
+                else:
+                    raise
 
         # ── Log estructurado de fin de partida ──
         standings_data = []
@@ -888,7 +1238,8 @@ class RoundManager:
             extra={
                 "game_id": state.game_id,
                 "group_chat_id": state.group_chat_id,
-                "total_rounds": state.round_number,
+                "total_rounds": state.total_rounds,
+                "last_round": state.round_number,
                 "total_players": state.total_players,
                 "validation_mode": state.validation_mode,
                 "first_completer_id": state.first_completer_id,
@@ -898,6 +1249,10 @@ class RoundManager:
 
         self._letter_pending.pop(state.game_id, None)
         self._rounds_by_group.pop(state.group_chat_id, None)
+        if self._store:
+            self._safe_task(self._store.delete_letter_pending(state.game_id))
+            self._safe_task(self._store.delete_round(state.game_id))
+            self._safe_task(self._store.delete_rounds_by_group(state.group_chat_id))
 
     async def _check_all_submitted(self, state: RoundState) -> bool:
         return len(state.submitted_player_ids) >= state.total_players
@@ -940,37 +1295,59 @@ class RoundManager:
 
         self._debounced_update(state, bot)
 
+    @staticmethod
+    def _build_update_snapshot(state: RoundState) -> dict:
+        """Snapshot de campos de estado bajo el lock para evitar data race (D8)."""
+        return {
+            "round_number": state.round_number,
+            "letter": state.letter,
+            "categories": list(state.categories),
+            "round_time": state.round_time,
+            "submitted": {
+                pid: {
+                    "name": state.player_names.get(pid, f"Jugador {pid}"),
+                    "completed": pid in state.complete_player_ids,
+                }
+                for pid in state.submitted_player_ids
+            },
+            "first_completer_name": state.first_completer_name,
+            "first_completer_id": state.first_completer_id,
+            "stop_presses": state.stop_presses,
+            "chat_id": state.message_chat_id,
+            "message_id": state.message_id,
+        }
+
     def _debounced_update(self, state: RoundState, bot: Bot) -> None:
         if state.update_task and not state.update_task.done():
             state.update_task.cancel()
-        state.update_task = asyncio.create_task(self._do_update_round_message(state, bot))
+        snapshot = self._build_update_snapshot(state)
+        state.update_task = asyncio.create_task(self._do_update_round_message(snapshot, bot))
 
-    async def _do_update_round_message(self, state: RoundState, bot: Bot) -> None:
+    async def _do_update_round_message(self, snap: dict, bot: Bot) -> None:
         lines = [
             self._format_round_message(
-                state.round_number, state.letter, state.categories, state.round_time
+                snap["round_number"], snap["letter"], snap["categories"], snap["round_time"]
             )
         ]
 
-        if state.submitted_player_ids:
+        if snap["submitted"]:
             lines.append("")
             lines.append("✅ <b>Respondieron:</b>")
-            for pid in state.submitted_player_ids:
-                name = state.player_names.get(pid, f"Jugador {pid}")
-                completed = "⭐" if pid in state.complete_player_ids else "⬜"
-                lines.append(f"  {completed} {name}")
+            for pid, info in snap["submitted"].items():
+                completed = "⭐" if info["completed"] else "⬜"
+                lines.append(f"  {completed} {info['name']}")
 
-        if state.first_completer_id:
-            name = state.first_completer_name or "Alguien"
+        if snap["first_completer_id"]:
+            name = snap["first_completer_name"] or "Alguien"
             lines.append("")
             lines.append(f"⏹ <b>{name} completó todas las categorías</b>")
-            lines.append(f"  Stop: {state.stop_presses}/{NUM_STOP_BUTTONS}")
+            lines.append(f"  Stop: {snap['stop_presses']}/{NUM_STOP_BUTTONS}")
 
         try:
             await bot.edit_message_text(
                 "\n".join(lines),
-                chat_id=state.message_chat_id,
-                message_id=state.message_id,
+                chat_id=snap["chat_id"],
+                message_id=snap["message_id"],
             )
         except asyncio.CancelledError:
             pass
@@ -996,6 +1373,7 @@ class RoundManager:
                 first_completer_id=state.first_completer_id,
                 spell_corrector=get_corrector(),
                 letter=state.letter,
+                game_id=state.game_id,
             )
 
             # ── Log estructurado de resultados de ronda ──
@@ -1033,6 +1411,12 @@ class RoundManager:
                     "players": players_data,
                 },
             )
+
+            # Acumular respuestas únicas por jugador (G5)
+            game_uid = self._unique_answers.setdefault(state.game_id, {})
+            for pid, answer_list in details.items():
+                unique_count = sum(1 for ad in answer_list if ad["score"] >= UNIQUE_POINTS)
+                game_uid[pid] = game_uid.get(pid, 0) + unique_count
 
             # Persistir Answer.score y Answer.is_correct (batch)
             all_updates = []
@@ -1089,6 +1473,7 @@ class RoundManager:
         return "\n".join(lines)
 
     async def cancel_game(self, game_id: int) -> None:
+        self._cancelled[game_id] = True
         async with self._lock_for(game_id):
             state = self._rounds.pop(game_id, None)
             if state:
@@ -1114,8 +1499,16 @@ class RoundManager:
                         task.cancel()
                 self._rounds_by_group.pop(pending.group_chat_id, None)
 
-            self._locks.pop(game_id, None)
+            if self._store:
+                await self._store.delete_round(game_id)
+                await self._store.delete_letter_pending(game_id)
+                if state:
+                    await self._store.delete_rounds_by_group(state.group_chat_id)
+                elif pending:
+                    await self._store.delete_rounds_by_group(pending.group_chat_id)
+
             logger.info("Estado en memoria cancelado para game %s", game_id)
+        self._cancelled.pop(game_id, None)
 
     async def _get_leader_telegram_id(self, game_id: int) -> int | None:
         async with async_session_factory() as session:
@@ -1138,22 +1531,38 @@ class RoundManager:
                 select(GamePlayer, Player)
                 .join(Player, GamePlayer.player_id == Player.id)
                 .where(GamePlayer.game_id == game_id)
-                .order_by(GamePlayer.score.desc())
+                .order_by(func.coalesce(GamePlayer.score, 0).desc())
             )
             rows = await session.execute(stmt)
-            return [(row.Player.telegram_id, row.GamePlayer.score) for row in rows]
+            return [
+                (row.Player.telegram_id, row.GamePlayer.score or 0) for row in rows
+            ]
 
     async def _round_timer(self, state: RoundState, bot: Bot) -> None:
         try:
-            for _remaining in range(state.round_time, 0, -1):
-                if state.timer_task and state.timer_task.done():
+            round_msg_id = state.message_id
+            round_chat_id = state.message_chat_id
+            rt = state.round_time
+            update_points = {max(5, rt * 2 // 3), max(5, rt // 3), 5}
+            for remaining in range(rt, 0, -1):
+                if state.game_id not in self._rounds:
                     return
-                try:
-                    await asyncio.wait_for(asyncio.get_event_loop().create_future(), timeout=1)
-                except asyncio.TimeoutError:
-                    continue
-                except asyncio.CancelledError:
-                    return
+
+                if remaining in update_points and round_msg_id:
+                    try:
+                        remaining_str = (
+                            f"⏱ <b>{remaining}s restantes</b>\n\n"
+                            f"{self._format_categories_only(state.categories)}"
+                        )
+                        await bot.edit_message_text(
+                            remaining_str,
+                            chat_id=round_chat_id,
+                            message_id=round_msg_id,
+                        )
+                    except (TelegramBadRequest, TelegramForbiddenError):
+                        pass
+
+                await asyncio.sleep(1)
 
             await self._close_round(state.game_id, "timeout", bot)
         except asyncio.CancelledError:
@@ -1165,6 +1574,10 @@ class RoundManager:
     ) -> str:
         cats_display = "\n".join(f"  <b>{cat}:</b> ..." for cat in categories)
         return f"⏱ {round_time} segundos\n\nEnvía tus respuestas en este formato:\n\n{cats_display}"
+
+    @staticmethod
+    def _format_categories_only(categories: list[str]) -> str:
+        return "\n".join(f"  <b>{cat}:</b> ..." for cat in categories)
 
     @staticmethod
     def _format_stop_message(presses: int) -> str:
@@ -1185,6 +1598,63 @@ def _unaccent(s: str) -> str:
     return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
 
 
+def _match_plural(raw_cat: str, cat_map: dict[str, str]) -> str | None:
+    if raw_cat.endswith("es"):
+        singular = raw_cat[:-2]
+        if singular in cat_map:
+            return cat_map[singular]
+    if raw_cat.endswith("s"):
+        singular = raw_cat[:-1]
+        if singular in cat_map:
+            return cat_map[singular]
+    return None
+
+
+def _extract_inline_categories(
+    value: str,
+    cat_map: dict[str, str],
+    result: dict[str, str],
+) -> str | None:
+    """Busca patrones ``Categoría: Valor`` dentro de *value*.
+
+    Si encuentra, extrae la(s) sub-categoría(s) en *result* (mutación) y
+    retorna el texto restante como valor de la categoría original.
+    Retorna ``None`` si no hay categorías inline.
+    """
+    tokens = sorted(
+        set(cat_map.keys()) | set(_PLURAL_MAP.keys()),
+        key=len,
+        reverse=True,
+    )
+    inline_re = re.compile(
+        r"\b(" + "|".join(re.escape(t) for t in tokens) + r")\s*:",
+        re.IGNORECASE,
+    )
+
+    m = inline_re.search(value)
+    if not m:
+        return None
+
+    first_val = value[: m.start()].strip()
+    raw_token = m.group(1).lower()
+
+    rest = value[m.end() :].strip()
+    second_val = _extract_inline_categories(rest, cat_map, result) or rest
+
+    canonical = (
+        cat_map.get(raw_token) or _PLURAL_MAP.get(raw_token) or _match_plural(raw_token, cat_map)
+    )
+    if canonical:
+        if canonical in result:
+            logger.warning(
+                "Categoría duplicada '%s' en respuestas inline, se sobrescribe",
+                canonical,
+            )
+        result[canonical] = second_val
+
+    return first_val
+
+
 def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
     # Mapa sin acentos: "pais" → "País", "animal" → "Animal", ...
     cat_map: dict[str, str] = {}
@@ -1192,6 +1662,7 @@ def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
         cat_map[_unaccent(cat.lower())] = cat
 
     result: dict[str, str] = {}
+    seen: set[str] = set()
 
     for line in text.splitlines():
         match = LINE_REGEX.match(line)
@@ -1201,12 +1672,21 @@ def parse_answers(text: str, categories: list[str]) -> dict[str, str]:
         value = match.group(2).strip()
         if not value:
             continue
-        if raw_cat in cat_map:
-            canonical = cat_map[raw_cat]
-            if canonical in result:
+        canonical = (
+            cat_map.get(raw_cat) or _PLURAL_MAP.get(raw_cat) or _match_plural(raw_cat, cat_map)
+        )
+        if canonical:
+            inline_value = _extract_inline_categories(value, cat_map, result)
+            if inline_value is not None:
+                value = inline_value
+            if canonical in seen:
                 logger.warning("Categoría duplicada '%s' en respuestas, se sobrescribe", canonical)
+            seen.add(canonical)
             result[canonical] = value
 
+    # Forzar todas las categorías en el dict (G6)
+    for cat in categories:
+        result.setdefault(cat, "")
     return result
 
 

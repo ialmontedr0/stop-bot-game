@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.utils.markdown import hbold
 
+from src.services.error_tracker import error_tracker
 from src.services.leaderboard import leaderboard_service
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ def _current_week_range() -> str:
 
 
 @leaderboard_router.message(Command("leaderboard"))
+@error_tracker.track_errors(handler_name="cmd_leaderboard")
 async def cmd_leaderboard(message: Message) -> None:
     if message.chat.type == "private":
         await message.reply("❌ Este comando solo funciona en grupos.")
@@ -40,33 +42,18 @@ async def cmd_leaderboard(message: Message) -> None:
             return
 
         entries = [(e["rank"], e["name"], e["score"]) for e in rows]
-        from io import BytesIO
-
-        from PIL import Image as PILImage
 
         from src.image_generator import generate_leaderboard_image
+        from src.services.photo_cache import photo_cache
 
-        # Descargar fotos de perfil para top 3
         profile_photos = {}
         for entry in rows[:3]:
             rank = entry["rank"]
-            telegram_id = entry.get("player_id")
+            telegram_id = entry.get("telegram_id")
             if not telegram_id:
                 continue
-            try:
-                user_photos = await message.bot.get_user_profile_photos(
-                    user_id=telegram_id, limit=1
-                )
-                if user_photos.total_count > 0:
-                    file_id = user_photos.photos[0][-1].file_id
-                    file = await message.bot.get_file(file_id)
-                    photo_bytes_io = await message.bot.download_file(file.file_path)
-                    photo_data = photo_bytes_io.read()
-                    profile_photos[rank] = PILImage.open(BytesIO(photo_data)).convert("RGBA")
-                else:
-                    profile_photos[rank] = None
-            except Exception:
-                profile_photos[rank] = None
+            photo = await photo_cache.get_photo(message.bot, telegram_id)
+            profile_photos[rank] = photo
 
         img_bytes = generate_leaderboard_image(entries, _current_week_range(), profile_photos)
         if img_bytes:
@@ -99,12 +86,14 @@ async def cmd_leaderboard(message: Message) -> None:
 
 
 @leaderboard_router.message(Command("rank"))
+@error_tracker.track_errors(handler_name="cmd_rank")
 async def cmd_rank(message: Message) -> None:
     if not message.from_user:
         return
 
     if message.chat.type == "private":
         await message.reply("❌ Este comando solo funciona en grupos.")
+        return
 
     group_chat_id = message.chat.id
     data = await leaderboard_service.get_player_rank_by_telegram(

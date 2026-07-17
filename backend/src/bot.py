@@ -9,6 +9,7 @@ import structlog
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
 from aiogram.fsm.storage.redis import RedisStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from redis.asyncio import Redis as AsyncRedis
@@ -32,9 +33,11 @@ from src.middlewares.user_exists import UserExistsMiddleware
 from src.monitoring.health_server import run_health_server_sync
 from src.monitoring.metrics import redis_connected
 from src.services.game_orchestrator import game_orchestrator
+from src.services.game_state_store import create_game_state_store
 
 # -- Variables globales del modulo --
 _redis_client: AsyncRedis | None = None
+_game_state_store = None
 _log_tasks: set[asyncio.Task] = set()
 _scheduler: AsyncIOScheduler | None = None
 _health_server = None
@@ -42,6 +45,16 @@ dp: Dispatcher | None = None
 
 
 class LoggedBot(Bot):
+    async def __call__(self, method, request_timeout=None):
+        for attempt in range(3):
+            try:
+                return await super().__call__(method, request_timeout=request_timeout)
+            except (TelegramRetryAfter, TelegramNetworkError) as e:
+                if attempt < 2:
+                    await asyncio.sleep(getattr(e, "retry_after", 1))
+                else:
+                    raise
+
     async def send_message(self, chat_id: int, text, **kwargs):
         msg = await super().send_message(chat_id, text, **kwargs)
         task = asyncio.create_task(self._log_message(chat_id, msg.message_id))
@@ -119,6 +132,24 @@ logger = structlog.get_logger(__name__)
 
 async def on_startup() -> None:
     logger.info("Bot iniciado", version="1.0.0")
+
+    from src.services.photo_cache import photo_cache
+
+    expired = photo_cache.clear_expired()
+    logger.info("Profile photo cache limpio", extra={"expired": expired})
+
+    if _game_state_store is not None:
+        from src.services.round_manager import round_manager
+
+        restored_lobbies = await game_orchestrator.restore_from_store()
+        restored_rounds = await round_manager.restore_from_store()
+        logger.info(
+            "Estado restaurado desde store",
+            extra={"lobbies": restored_lobbies, "rounds": restored_rounds},
+        )
+
+    # Limpiar partidas huérfanas DESPUÉS de restaurar el store, para que
+    # los lobbies/rondas restaurados sean evaluados correctamente.
     await game_orchestrator.cleanup_stale_games()
 
     # Cargar word lists de color/fruta/pais desde DB
@@ -174,7 +205,10 @@ async def _do_shutdown(sig_name: str = "shutdown") -> None:
 
     from src.services.spell_corrector import get_corrector
 
-    await get_corrector().close()
+    try:
+        await get_corrector().close()
+    except Exception:
+        logger.exception("Error cerrando corrector ortográfico")
 
     if _health_server:
         logger.info("Deteniendo health server...")
@@ -208,6 +242,14 @@ async def main() -> None:
     except Exception:
         _redis_client = None
         redis_connected.set(0)
+
+    # === Crear GameStateStore (Redis si disponible, sino PostgreSQL) ===
+    global _game_state_store
+    _game_state_store = await create_game_state_store(_redis_client)
+    game_orchestrator.set_store(_game_state_store)
+    from src.services.round_manager import round_manager
+
+    round_manager.set_store(_game_state_store)
 
     if _redis_client:
         storage = RedisStorage(redis=_redis_client)
@@ -249,15 +291,18 @@ async def main() -> None:
     dp.callback_query.middleware(user_exists)
 
     # Configurar graceful shutdown
-    if sys.platform != "win32":
-        loop = asyncio.get_event_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
             loop.add_signal_handler(
                 sig,
                 lambda s=sig: asyncio.create_task(_do_shutdown(signal.Signals(s).name)),
             )
-    else:
-        pass
+        except NotImplementedError:
+            # Fallback para Windows: usar signal.signal()
+            def _handler(s, frame, sig=sig):
+                asyncio.ensure_future(_do_shutdown(signal.Signals(sig).name), loop=loop)
+            signal.signal(sig, _handler)
 
     logger.info("Iniciando polling...")
     try:

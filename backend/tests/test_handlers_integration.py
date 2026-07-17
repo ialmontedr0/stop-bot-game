@@ -114,7 +114,8 @@ class TestBackToMain:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await back_to_main(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await back_to_main(mock_callback)
             mock_callback.message.edit_text.assert_awaited_once()
             mock_callback.answer.assert_awaited_once()
 
@@ -125,7 +126,8 @@ class TestShowRounds:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await show_rounds(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await show_rounds(mock_callback)
             mock_callback.message.edit_text.assert_awaited_once()
             mock_callback.answer.assert_awaited_once()
 
@@ -137,7 +139,8 @@ class TestSetRounds:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await set_rounds(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await set_rounds(mock_callback)
             assert mock_callback.answer.await_count >= 1
             call_args = mock_callback.answer.await_args_list[0][0][0]
             assert "10" in call_args
@@ -149,7 +152,8 @@ class TestShowTime:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await show_time(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await show_time(mock_callback)
             mock_callback.message.edit_text.assert_awaited_once()
             mock_callback.answer.assert_awaited_once()
 
@@ -161,7 +165,8 @@ class TestSetTime:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await set_time(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await set_time(mock_callback)
             assert mock_callback.answer.await_count >= 1
             call_args = mock_callback.answer.await_args_list[0][0][0]
             assert "60" in call_args
@@ -173,7 +178,8 @@ class TestShowCats:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await show_cats(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await show_cats(mock_callback)
             mock_callback.message.edit_text.assert_awaited_once()
             mock_callback.answer.assert_awaited_once()
 
@@ -185,7 +191,8 @@ class TestToggleCat:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await toggle_cat(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await toggle_cat(mock_callback)
             mock_callback.answer.assert_awaited_once()
 
     async def test_removes_category(self, mock_callback, db_session):
@@ -194,7 +201,8 @@ class TestToggleCat:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await toggle_cat(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await toggle_cat(mock_callback)
             mock_callback.answer.assert_awaited_once()
 
     async def test_minimum_four_categories(self, mock_callback, db_session):
@@ -210,7 +218,8 @@ class TestToggleCat:
             mock_repo_cls.return_value = repo
             with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
                 mock_sf.return_value.__aenter__.return_value = db_session
-                await toggle_cat(mock_callback)
+                with patch("src.handlers.game.settings.is_admin", return_value=True):
+                    await toggle_cat(mock_callback)
                 mock_callback.answer.assert_awaited_once()
                 assert "Mínimo 4" in mock_callback.answer.await_args[0][0]
 
@@ -221,7 +230,8 @@ class TestToggleN:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await toggle_n(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await toggle_n(mock_callback)
             mock_callback.answer.assert_awaited_once()
 
 
@@ -231,7 +241,8 @@ class TestShowMode:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await show_mode(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await show_mode(mock_callback)
             mock_callback.message.edit_text.assert_awaited_once()
             mock_callback.answer.assert_awaited_once()
 
@@ -243,7 +254,8 @@ class TestSetMode:
 
         with patch("src.handlers.game.settings.async_session_factory") as mock_sf:
             mock_sf.return_value.__aenter__.return_value = db_session
-            await set_mode(mock_callback)
+            with patch("src.handlers.game.settings.is_admin", return_value=True):
+                await set_mode(mock_callback)
             assert mock_callback.answer.await_count >= 1
             call_args = mock_callback.answer.await_args_list[0][0][0]
             assert "ai" in call_args
@@ -304,18 +316,22 @@ class TestSerializeCategories:
 class TestCmdClear:
     async def test_private_chat_rejected(self, mock_message, mock_bot):
         mock_message.chat.type = "private"
-        from src.handlers.game.clear import cmd_clear
+        from src.handlers.game.clear import CommandObject, cmd_clear
 
-        await cmd_clear(mock_message, mock_bot)
+        command = MagicMock(spec=CommandObject)
+        command.args = None
+        await cmd_clear(mock_message, mock_bot, command)
         mock_message.answer.assert_awaited_once()
         args = mock_message.answer.await_args[0][0]
         assert "grupos" in args
 
     async def test_non_admin_rejected(self, mock_message, mock_bot, db_session):
         with patch("src.handlers.game.clear.is_admin", AsyncMock(return_value=False)):
-            from src.handlers.game.clear import cmd_clear
+            from src.handlers.game.clear import CommandObject, cmd_clear
 
-            await cmd_clear(mock_message, mock_bot)
+            command = MagicMock(spec=CommandObject)
+            command.args = None
+            await cmd_clear(mock_message, mock_bot, command)
             mock_message.answer.assert_awaited_once()
             args = mock_message.answer.await_args[0][0]
             assert "administradores" in args
@@ -324,39 +340,49 @@ class TestCmdClear:
         with patch("src.handlers.game.clear.is_admin", AsyncMock(return_value=True)):
             with patch("src.handlers.game.clear.async_session_factory") as mock_sf:
                 mock_sf.return_value.__aenter__.return_value = db_session
-                from src.handlers.game.clear import cmd_clear
+                with patch("src.handlers.game.clear._pending", {123456789: 9999999999}):
+                    from src.handlers.game.clear import CommandObject, cmd_clear
 
-                await cmd_clear(mock_message, mock_bot)
-                ret = mock_message.answer.return_value
-                ret.edit_text.assert_awaited_once()
+                    command = MagicMock(spec=CommandObject)
+                    command.args = "confirmar"
+                    await cmd_clear(mock_message, mock_bot, command)
+                    ret = mock_message.answer.return_value
+                    ret.edit_text.assert_awaited_once()
 
     async def test_clears_messages(self, mock_message, mock_bot, db_session):
         mock_bot.delete_messages = AsyncMock()
         with patch("src.handlers.game.clear.is_admin", AsyncMock(return_value=True)):
             with patch("src.handlers.game.clear.async_session_factory") as mock_sf:
                 mock_sf.return_value.__aenter__.return_value = db_session
-                from src.handlers.game.clear import cmd_clear
+                with patch("src.handlers.game.clear._pending", {123456789: 9999999999}):
+                    from src.handlers.game.clear import CommandObject, cmd_clear
 
-                await cmd_clear(mock_message, mock_bot)
-                ret = mock_message.answer.return_value
-                ret.edit_text.assert_awaited_once()
+                    command = MagicMock(spec=CommandObject)
+                    command.args = "confirmar"
+                    await cmd_clear(mock_message, mock_bot, command)
+                    ret = mock_message.answer.return_value
+                    ret.edit_text.assert_awaited_once()
 
 
 class TestCmdClearStats:
     async def test_private_chat_rejected(self, mock_message, mock_bot):
         mock_message.chat.type = "private"
-        from src.handlers.game.clear_stats import cmd_clear_stats
+        from src.handlers.game.clear_stats import CommandObject, cmd_clear_stats
 
-        await cmd_clear_stats(mock_message, mock_bot)
+        command = MagicMock(spec=CommandObject)
+        command.args = None
+        await cmd_clear_stats(mock_message, mock_bot, command)
         mock_message.answer.assert_awaited_once()
         args = mock_message.answer.await_args[0][0]
         assert "grupos" in args
 
     async def test_non_admin_rejected(self, mock_message, mock_bot):
         with patch("src.handlers.game.clear_stats.is_admin", AsyncMock(return_value=False)):
-            from src.handlers.game.clear_stats import cmd_clear_stats
+            from src.handlers.game.clear_stats import CommandObject, cmd_clear_stats
 
-            await cmd_clear_stats(mock_message, mock_bot)
+            command = MagicMock(spec=CommandObject)
+            command.args = None
+            await cmd_clear_stats(mock_message, mock_bot, command)
             mock_message.answer.assert_awaited_once()
             args = mock_message.answer.await_args[0][0]
             assert "administradores" in args
@@ -365,11 +391,14 @@ class TestCmdClearStats:
         with patch("src.handlers.game.clear_stats.is_admin", AsyncMock(return_value=True)):
             with patch("src.handlers.game.clear_stats.async_session_factory") as mock_sf:
                 mock_sf.return_value.__aenter__.return_value = db_session
-                from src.handlers.game.clear_stats import cmd_clear_stats
+                with patch("src.handlers.game.clear_stats._pending", {123456789: 9999999999}):
+                    from src.handlers.game.clear_stats import CommandObject, cmd_clear_stats
 
-                await cmd_clear_stats(mock_message, mock_bot)
-                ret = mock_message.answer.return_value
-                assert ret.edit_text.await_count >= 1
+                    command = MagicMock(spec=CommandObject)
+                    command.args = "confirmar"
+                    await cmd_clear_stats(mock_message, mock_bot, command)
+                    ret = mock_message.answer.return_value
+                    assert ret.edit_text.await_count >= 1
 
 
 # ─── Diagnose handlers ──────────────────────────────────────────────────
@@ -590,8 +619,8 @@ class TestCmdLeaderboard:
         with patch("src.handlers.game.leaderboard.leaderboard_service") as mock_ls:
             mock_ls.get_weekly_top = AsyncMock(
                 return_value=[
-                    {"rank": 1, "name": "Player1", "score": 100, "games": 5, "player_id": 111},
-                    {"rank": 2, "name": "Player2", "score": 80, "games": 3, "player_id": 222},
+                    {"rank": 1, "name": "Player1", "score": 100, "games": 5, "telegram_id": 111},
+                    {"rank": 2, "name": "Player2", "score": 80, "games": 3, "telegram_id": 222},
                 ]
             )
             with patch("src.image_generator.generate_leaderboard_image", return_value=None):

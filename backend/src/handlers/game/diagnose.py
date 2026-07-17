@@ -16,6 +16,7 @@ diagnose_router = Router()
 
 
 @diagnose_router.message(Command("diagnose"))
+@error_tracker.track_errors(handler_name="cmd_diagnose")
 async def cmd_diagnose(message: Message, bot: Bot) -> None:
     """Muestra un reporte de diagnóstico de errores."""
     if message.chat.type not in ("group", "supergroup"):
@@ -59,6 +60,7 @@ async def cmd_diagnose(message: Message, bot: Bot) -> None:
 
 
 @diagnose_router.message(Command("resolve"))
+@error_tracker.track_errors(handler_name="cmd_resolve")
 async def cmd_resolve(message: Message, command: CommandObject, bot: Bot) -> None:
     """Marca todos los errores no resueltos como resueltos.
     Uso: /resolve [reason opcional]
@@ -79,7 +81,7 @@ async def cmd_resolve(message: Message, command: CommandObject, bot: Bot) -> Non
 
     async with async_session_factory() as session:
         repo = ErrorLogRepository(session)
-        errors = await repo.get_unresolved()
+        errors = await repo.get_unresolved(group_chat_id=message.chat.id)
         for err in errors:
             await repo.mark_resolved(err.id, resolution=reason)
 
@@ -88,6 +90,7 @@ async def cmd_resolve(message: Message, command: CommandObject, bot: Bot) -> Non
 
 
 @diagnose_router.message(Command("errors"))
+@error_tracker.track_errors(handler_name="cmd_errors")
 async def cmd_errors(message: Message, bot: Bot) -> None:
     """Muestra los últimos errores sin resolver."""
     if message.chat.type not in ("group", "supergroup"):
@@ -118,5 +121,58 @@ async def cmd_errors(message: Message, bot: Bot) -> None:
             lines.append(f"  {msg_short}")
         if err.handler:
             lines.append(f"  Handler: {err.handler}")
+
+    await message.reply("\n".join(lines))
+
+
+@diagnose_router.message(Command("debug"))
+@error_tracker.track_errors(handler_name="cmd_debug")
+async def cmd_debug(message: Message, bot: Bot) -> None:
+    """Muestra estado interno del bot (lobbies, rondas, etc.)."""
+    if message.chat.type not in ("group", "supergroup"):
+        msg = await message.answer("⚠️ Este comando solo funciona en grupos.")
+        asyncio.create_task(delete_after(msg))
+        return
+
+    if not await is_admin(bot, message.chat.id, message.from_user.id):
+        msg = await message.answer("❌ Solo los administradores pueden usar este comando.")
+        asyncio.create_task(delete_after(msg))
+        return
+
+    from src.services.game_orchestrator import lobby_manager
+    from src.services.round_manager import round_manager
+
+    lines: list[str] = ["<b>🐛 Debug del bot</b>", ""]
+
+    # Lobbies
+    lobby_count = len(lobby_manager._lobbies) if hasattr(lobby_manager, '_lobbies') else 0
+    lines.append(f"<b>Lobbies activos:</b> {lobby_count}")
+    active_lobby = lobby_manager._lobbies.get(message.chat.id)
+    if active_lobby:
+        gp = getattr(active_lobby, 'game_players', [])
+        lines.append(f"  Game ID: {active_lobby.game_id}")
+        lines.append(f"  Jugadores: {len(gp)}")
+        lines.append(f"  Host: {active_lobby.host_telegram_id}")
+    lines.append("")
+
+    # Rondas
+    round_count = len(round_manager._rounds) if hasattr(round_manager, '_rounds') else 0
+    lines.append(f"<b>Rondas activas:</b> {round_count}")
+    active_round = round_manager._rounds.get(message.chat.id)
+    if active_round:
+        lines.append(f"  Game ID: {active_round.game_id}")
+        lines.append(f"  Ronda: {active_round.round_number}")
+        lines.append(f"  Letra: {active_round.letter}")
+        lines.append(f"  Categorías: {len(active_round.categories)}")
+        lines.append(f"  Tiempo restante: {active_round.round_time}s (aprox)")
+        lines.append(f"  Modo validación: {active_round.validation_mode}")
+    lines.append("")
+
+    # Letter pending
+    letter_pending = round_manager._letter_pending.get(message.chat.id) if hasattr(round_manager, '_letter_pending') else None
+    lines.append(f"<b>Letter pending:</b> {'Sí' if letter_pending else 'No'}")
+
+    from src.services.error_tracker import error_tracker
+    lines.append(f"<b>Errores capturados:</b> {error_tracker.captured_count}")
 
     await message.reply("\n".join(lines))

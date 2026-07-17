@@ -47,6 +47,8 @@ def settings_main_keyboard(
             )
         ],
         [InlineKeyboardButton(text=f"⚡ Modo: {mode_label}", callback_data="settings_mode")],
+        [InlineKeyboardButton(text="🔄 Resetear", callback_data="settings_reset")],
+        [InlineKeyboardButton(text="👁 Ver configuración", callback_data="settings_preview")],
         [InlineKeyboardButton(text="🔙 Cerrar", callback_data="settings_close")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)

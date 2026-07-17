@@ -1,7 +1,7 @@
 import logging
-from datetime import datetime, timezone
-
 from sqlalchemy import select
+
+from src.core.text_utils import utcnow
 
 from src.db.engine import async_session_factory
 from src.db.models import SeasonalEvent
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class EventService:
     @staticmethod
     async def get_active_multiplier() -> float:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utcnow()
         async with async_session_factory() as session:
             stmt = (
                 select(SeasonalEvent.multiplier)
@@ -28,7 +28,7 @@ class EventService:
 
     @staticmethod
     async def get_active_events() -> list[dict]:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utcnow()
         async with async_session_factory() as session:
             stmt = (
                 select(SeasonalEvent)

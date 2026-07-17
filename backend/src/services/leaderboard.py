@@ -30,7 +30,7 @@ class LeaderboardService:
             result_list.append(
                 {
                     "rank": entry.rank or (i + 1),
-                    "player_id": player.telegram_id if player else None,
+                    "telegram_id": player.telegram_id if player else None,
                     "name": player.first_name or player.username or f"ID{player.telegram_id}"
                     if player
                     else f"Player#{entry.player_id}",

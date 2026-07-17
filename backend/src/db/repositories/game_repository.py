@@ -1,6 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import Row, select
+
+from src.core.text_utils import utcnow
+
+from sqlalchemy import delete
 
 from src.db.models import Game, GamePlayer, Player
 
@@ -76,6 +80,33 @@ class GameRepository(BaseRepository[Game]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def remove_player_from_game(self, game: Game, player: Player) -> None:
+        stmt = (
+            delete(GamePlayer)
+            .where(GamePlayer.game_id == game.id)
+            .where(GamePlayer.player_id == player.id)
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()
+
+    async def transfer_host(self, game: Game, new_host_telegram_id: int) -> None:
+        from sqlalchemy import update
+
+        stmt = (
+            update(GamePlayer)
+            .where(GamePlayer.game_id == game.id)
+            .values(is_host=False)
+        )
+        await self.session.execute(stmt)
+        stmt = (
+            update(GamePlayer)
+            .where(GamePlayer.game_id == game.id)
+            .where(GamePlayer.player_id == select(Player.id).where(Player.telegram_id == new_host_telegram_id).scalar_subquery())
+            .values(is_host=True)
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()
+
     async def update_game_status(self, game: Game, status: str) -> Game:
         game.status = status
         await self.session.commit()
@@ -83,7 +114,7 @@ class GameRepository(BaseRepository[Game]):
         return game
 
     async def get_stale_games(self) -> list[Game]:
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+        cutoff = utcnow() - timedelta(days=1)
         stmt = (
             select(Game)
             .where(Game.status.in_(["lobby", "playing"]))

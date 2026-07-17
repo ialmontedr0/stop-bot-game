@@ -64,18 +64,18 @@ def test_stop_keyboard_has_stop_button():
     buttons = markup.inline_keyboard
     assert len(buttons) == 1
     assert len(buttons[0]) == 1
-    assert buttons[0][0].text == "🛑 Stop 🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜"
+    assert buttons[0][0].text == "🛑 Stop (3/10)"
     assert buttons[0][0].callback_data == "stop:1:3"
 
 
 def test_stop_keyboard_different_stops():
     markup_1 = stop_keyboard(game_id=42, stop_number=1)
     assert markup_1.inline_keyboard[0][0].callback_data == "stop:42:1"
-    assert markup_1.inline_keyboard[0][0].text == "🛑 Stop 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜"
+    assert markup_1.inline_keyboard[0][0].text == "🛑 Stop (1/10)"
 
     markup_10 = stop_keyboard(game_id=42, stop_number=10)
     assert markup_10.inline_keyboard[0][0].callback_data == "stop:42:10"
-    assert markup_10.inline_keyboard[0][0].text == "🛑 Stop 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩"
+    assert markup_10.inline_keyboard[0][0].text == "🛑 Stop (10/10)"
 
 
 def test_letter_keyboard_returns_inline_keyboard():
@@ -86,7 +86,7 @@ def test_letter_keyboard_returns_inline_keyboard():
 def test_letter_keyboard_has_all_letters():
     markup = letter_keyboard(game_id=1)
     buttons = [btn for row in markup.inline_keyboard for btn in row]
-    assert len(buttons) == 26
+    assert len(buttons) == 27  # 26 letras + 1 skip
     texts = [btn.text for btn in buttons]
     for letter in LETTERS:
         assert letter in texts
@@ -105,11 +105,12 @@ def test_letter_keyboard_callback_format():
 def test_letter_keyboard_rows_grouped():
     markup = letter_keyboard(game_id=1)
     rows = markup.inline_keyboard
-    assert len(rows) == 4
+    assert len(rows) == 5  # 4 filas de letras + 1 skip
     assert len(rows[0]) == 6
     assert len(rows[1]) == 7
     assert len(rows[2]) == 7
     assert len(rows[3]) == 6
+    assert len(rows[4]) == 1  # botón skip
 
 
 # ── Settings keyboards ──────────────────────────────────────────────────────

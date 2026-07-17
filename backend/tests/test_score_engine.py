@@ -86,7 +86,7 @@ class TestIsValidWord:
         assert _is_valid_word("   ") is False
 
     def test_valid_single_char(self):
-        assert _is_valid_word("A") is True  # una letra es válida
+        assert _is_valid_word("A") is False  # min-length validation: >= 2 chars
 
 
 # ── _group_by_category ──────────────────────────────────────────────

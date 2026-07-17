@@ -1,5 +1,10 @@
 import re
 import unicodedata
+from datetime import datetime, timezone
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def normalize_text(text: str) -> str:

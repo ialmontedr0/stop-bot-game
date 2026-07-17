@@ -29,6 +29,15 @@ async def test_round_state_lifecycle(mock_bot):
 
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
+
+    # Mock session.execute → .scalars().all() para _check_all_submitted (M2)
+    scalar_result = MagicMock()
+    scalar_result.all = MagicMock(return_value=[1, 2])
+    scalars_mock = MagicMock(return_value=scalar_result)
+    mock_session.execute = AsyncMock(
+        return_value=MagicMock(scalars=scalars_mock)
+    )
+
     mock_repo = MagicMock()
     mock_repo.create_round = AsyncMock(return_value=MagicMock(id=1))
     mock_repo.get_active_round = AsyncMock(return_value=MagicMock(id=1))

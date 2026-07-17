@@ -37,7 +37,7 @@ class TestAIValidationRespectsNo:
         assert result is True, "IA dijo si -> debe retornar True"
         assert "antony santos" in sc._word_lists.get("artista", set()), \
             "palabra aceptada debe estar en word list"
-        source = sc.get_validation_source("artista:antony santos")
+        source = sc.get_validation_source(0, "artista:antony santos")
         assert source == "ai", f"source debe ser 'ai', obtuvo '{source}'"
 
     @pytest.mark.asyncio
@@ -53,7 +53,7 @@ class TestAIValidationRespectsNo:
         assert result is False, "IA dijo no -> debe retornar False"
         assert "antony paez" not in sc._word_lists.get("artista", set()), \
             "palabra rechazada NO debe estar en word list"
-        source = sc.get_validation_source("artista:antony paez")
+        source = sc.get_validation_source(0, "artista:antony paez")
         expected_source = "ai_rejected"
         assert source == expected_source, f"source debe ser '{expected_source}', obtuvo '{source}'"
 
@@ -68,8 +68,8 @@ class TestAIValidationRespectsNo:
             result = await sc.validate("Qqqqq", "nombre", mode="hybrid")
 
         assert result is True, "IA falla -> fallback permisivo -> True"
-        source = sc.get_validation_source("nombre:qqqqq")
-        assert source == "default", f"source debe ser 'default', obtuvo '{source}'"
+        source = sc.get_validation_source(0, "nombre:qqqqq")
+        assert source == "default_temp", f"source debe ser 'default_temp', obtuvo '{source}'"
 
     @pytest.mark.asyncio
     async def test_ai_sin_api_key_cae_default(self):
@@ -99,7 +99,7 @@ class TestAIValidationRespectsNo:
 
         # Segunda llamada: debe usar cache, NO llamar a _ai_validate otra vez
         # Reset counter para verificar que no se incrementa
-        calls_before = sc._api_calls
+        calls_before = sc._api_calls.copy()
         with patch.object(sc, "_ai_validate", AsyncMock(side_effect=Exception("NO DEBE LLAMAR"))):
             r2 = await sc.validate("Inventado", "artista", mode="hybrid")
 
@@ -146,5 +146,5 @@ class TestAIValidationRespectsNo:
             result = await sc.validate("Raul", "nombre", mode="hybrid")
 
         assert result is True
-        source = sc.get_validation_source("nombre:raul")
+        source = sc.get_validation_source(0, "nombre:raul")
         assert source == "word_list", f"source debe ser 'word_list', obtuvo '{source}'"

@@ -1,11 +1,14 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any
 
+from src.core.text_utils import utcnow
+
+import sqlalchemy as sa
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import ErrorLog
+from src.db.models import ErrorLog, Game
 
 
 class ErrorLogRepository:
@@ -40,13 +43,18 @@ class ErrorLogRepository:
         await self.session.refresh(log)
         return log
 
-    async def get_unresolved(self, limit: int = 50) -> list[ErrorLog]:
+    async def get_unresolved(self, limit: int = 50, group_chat_id: int | None = None) -> list[ErrorLog]:
         stmt = (
             select(ErrorLog)
             .where(ErrorLog.resolved.is_(False))
             .order_by(ErrorLog.timestamp.desc())
             .limit(limit)
         )
+        if group_chat_id is not None:
+            subq = select(Game.id).where(Game.group_chat_id == group_chat_id).scalar_subquery()
+            stmt = stmt.where(
+                sa.or_(ErrorLog.game_id.in_(subq), ErrorLog.game_id.is_(None))
+            )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -61,7 +69,7 @@ class ErrorLogRepository:
         return list(result.scalars().all())
 
     async def get_recent(self, minutes: int = 60, limit: int = 50) -> list[ErrorLog]:
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes)
+        cutoff = utcnow() - timedelta(minutes=minutes)
         stmt = (
             select(ErrorLog)
             .where(ErrorLog.timestamp >= cutoff)

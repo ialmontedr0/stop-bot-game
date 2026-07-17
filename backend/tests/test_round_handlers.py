@@ -154,6 +154,50 @@ async def test_callback_letter_invalid_letter(mock_rm):
     player.telegram_id = 111
     bot = AsyncMock()
 
+    mock_rm.handle_letter_selection = AsyncMock()
+
     await callback_letter(callback, player, bot)
-    callback.answer.assert_awaited_with("❌ Letra inválida.", show_alert=True)
-    mock_rm.handle_letter_selection.assert_not_called()
+    # Validación movida a handle_letter_selection (B6); handler delega siempre
+    mock_rm.handle_letter_selection.assert_awaited_once_with(
+        game_id=1, player_id=111, letter="1", callback=callback, bot=bot
+    )
+
+
+# ── callback_skip_letter ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@patch("src.handlers.game.round.round_manager")
+async def test_callback_skip_letter_calls_handle_skip_letter(mock_rm):
+    from src.handlers.game.round import callback_skip_letter
+
+    callback = MagicMock()
+    callback.data = "skip_letter:1"
+
+    player = MagicMock(spec=Player)
+    player.telegram_id = 111
+    bot = AsyncMock()
+
+    mock_rm.handle_skip_letter = AsyncMock()
+
+    await callback_skip_letter(callback, player, bot)
+    mock_rm.handle_skip_letter.assert_awaited_once_with(
+        game_id=1, player_id=111, callback=callback, bot=bot,
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.handlers.game.round.round_manager")
+async def test_callback_skip_letter_invalid_data(mock_rm):
+    from src.handlers.game.round import callback_skip_letter
+
+    callback = MagicMock()
+    callback.data = "invalid"
+    callback.answer = AsyncMock()
+
+    player = MagicMock(spec=Player)
+    player.telegram_id = 111
+    bot = AsyncMock()
+
+    await callback_skip_letter(callback, player, bot)
+    callback.answer.assert_awaited_once_with("❌ Datos inválidos.", show_alert=True)

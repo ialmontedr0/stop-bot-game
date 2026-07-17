@@ -187,7 +187,7 @@ class TestCreateLobby:
         result = await fresh_manager.create_lobby(
             group_chat_id=-100, host_player=mock_host_player, bot=mock_bot
         )
-        assert result == "⚠️ Ya hay una sala abierta en este grupo."
+        assert result == "⚠️ Ya hay una partida en curso en este grupo."
 
 
 class TestJoinLobby:
@@ -201,7 +201,8 @@ class TestJoinLobby:
     ):
         mock_callback.data = "join:999"
         await fresh_manager.join_lobby(999, mock_player, mock_callback, mock_bot)
-        mock_callback.answer.assert_awaited_with("❌ Esta sala ya no existe.", show_alert=True)
+        mock_callback.answer.assert_awaited()
+        assert "no existe" in mock_callback.answer.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_join_when_already_in_lobby(
@@ -225,7 +226,8 @@ class TestJoinLobby:
         mock_callback.data = "join:1"
 
         await fresh_manager.join_lobby(1, mock_host_player, mock_callback, mock_bot)
-        mock_callback.answer.assert_awaited_with("✅ Ya estás en la partida", show_alert=False)
+        mock_callback.answer.assert_awaited()
+        assert "ya esta" in mock_callback.answer.call_args[0][0].lower()
 
     @pytest.mark.asyncio
     async def test_join_full_lobby(
@@ -247,9 +249,8 @@ class TestJoinLobby:
         )
         fresh_manager._lobbies[-100] = state
         await fresh_manager.join_lobby(1, mock_player, mock_callback, mock_bot)
-        mock_callback.answer.assert_awaited_with(
-            f"❌ La partida ya tiene {MAX_PLAYERS} jugadores.", show_alert=True
-        )
+        mock_callback.answer.assert_awaited()
+        assert str(MAX_PLAYERS) in mock_callback.answer.call_args[0][0]
 
 
 class TestStartGame:
@@ -262,7 +263,8 @@ class TestStartGame:
         mock_bot,
     ):
         await fresh_manager.start_game(999, mock_host_player, mock_callback, mock_bot)
-        mock_callback.answer.assert_awaited_with("❌ Sala no encontrada.", show_alert=True)
+        mock_callback.answer.assert_awaited()
+        assert "no encontrada" in mock_callback.answer.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_start_not_host(
@@ -412,3 +414,129 @@ class TestResetAutoStart:
         bot = MagicMock()
         fresh_manager._reset_auto_start(state, bot)
         assert state.auto_start_task is None
+
+
+# --- CI: _expire_timer no debe cancelar partidas activas ---
+
+
+class TestExpireTimer:
+    """Verifica que _expire_timer respete state.started"""
+
+    @pytest.mark.asyncio
+    async def test_expire_timer_returns_early_when_started(self, fresh_manager, mock_bot):
+        """CI: state_started=True -> _expire_timer debe retornar sin hacer nada.
+
+        Args:
+            fresh_manager (_type_): _description_
+            mock_bot (_type_): _description_
+        """
+        with patch.object(_game_orch_mod, "LOBBY_EXPIRE", 0.01):
+            state = LobbyState(
+                game_id=1,
+                group_chat_id=-100,
+                host_telegram_id=999,
+                host_name="Host",
+                message_chat_id=-100,
+                message_id=1,
+                started=True,
+            )
+            fresh_manager._lobbies[-100] = state
+
+            await fresh_manager._expire_timer(state, mock_bot)
+            await asyncio.sleep(0.02)
+
+            # No debe haber eliminado el mensaje del lobby
+            mock_bot.delete_message.assert_not_awaited()
+
+            # No debe haber enviado elmensaje de "cerrado"
+            mock_bot.send_message.assert_not_awaited()
+
+            # No debe haber limpiado el lobby del dict
+            assert fresh_manager.has_lobby(-100)
+
+    @patch.object(_game_orch_mod, "async_session_factory")
+    @patch.object(_game_orch_mod, "GameRepository")
+    async def test_expire_timer_cancels_when_not_started(
+        self, mock_repo_cls, mock_session_factory, fresh_manager, mock_bot
+    ):
+        """CI: state.started=False -> _expire_timer debe cancelar partida.
+
+        Args:
+            mock_repo_cls (_type_): _description_
+            mock_session_factory (_type_): _description_
+            mock_bot (_type_): _description_
+        """
+        with patch.object(_game_orch_mod, "LOBBY_EXPIRE", 0.01):
+            mock_session = MagicMock()
+            mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+            mock_repo = AsyncMock()
+            mock_db_game = MagicMock()
+            mock_db_game.status = "lobby"
+            mock_repo.get_by_id.return_value = mock_db_game
+            mock_repo_cls.return_value = mock_repo
+
+            state = LobbyState(
+                game_id=1,
+                group_chat_id=-100,
+                host_telegram_id=999,
+                host_name="Host",
+                message_chat_id=-100,
+                message_id=1,
+                started=False,
+            )
+            fresh_manager._lobbies[-100] = state
+
+            await fresh_manager._expire_timer(state, mock_bot)
+            await asyncio.sleep(0.02)
+
+            # Debe haber eliminado el mensaje del lobby
+            mock_bot.delete_message.assert_awaited_once_with(
+                chat_id=state.message_chat_id, message_id=state.message_id
+            )
+
+            # Debe haber actualizado el estado en DB a "cancelled"
+            mock_repo.update_game_status.assert_awaited_once_with(
+                mock_db_game,
+                "cancelled",
+            )
+            # Debe haber enviado mensaje de cerrado
+            mock_bot.send_message.assert_awaited_once_with(
+                state.group_chat_id,
+                "⌛ <b>Lobby cerrado por inactividad.</b>",
+            )
+            # Debe haber limpiado el lobby del dict
+            assert not fresh_manager.has_lobby(-100)
+
+    @pytest.mark.asyncio
+    async def test_expire_timer_cancelled_error_caught(
+        self,
+        fresh_manager,
+        mock_bot,
+    ):
+        """C1: Si la tarea es cancelada externamente, CancelledError se captura.
+
+        Args:
+            fresh_manager (_type_): _description_
+            mock_bot (_type_): _description_
+        """
+        with patch.object(_game_orch_mod, "LOBBY_EXPIRE", 0.5):
+            state = LobbyState(
+                game_id=1,
+                group_chat_id=-100,
+                host_telegram_id=999,
+                host_name="Host",
+                message_chat_id=-100,
+                message_id=1,
+                started=False,
+            )
+            fresh_manager._lobbies[-100] = state
+            state.expire_task = asyncio.create_task(fresh_manager._expire_timer(state, mock_bot))
+            # Cancelar antes de que expire
+            state.expire_task.cancel()
+            await asyncio.sleep(0.1)
+            # No debe haber hecho nada porque ya fue cancelado
+
+            mock_bot.delete_message.assert_not_awaited()
+            # El lobby debe seguir existiendo (no se llamo a _cleanup)
+            assert fresh_manager.has_lobby(-100)

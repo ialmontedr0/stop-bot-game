@@ -1,25 +1,48 @@
+import asyncio
 import logging
+import time
 
 from aiogram import Bot, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from sqlalchemy import text
 
 from src.db.engine import async_session_factory
-from src.utils import is_admin
+from src.services.error_tracker import error_tracker
+from src.utils import delete_after, is_admin
 
 logger = logging.getLogger(__name__)
 clear_stats_router = Router()
 
+CONFIRM_TIMEOUT = 15
+_pending: dict[int, float] = {}
+
 
 @clear_stats_router.message(Command("clear_stats"))
-async def cmd_clear_stats(message: Message, bot: Bot) -> None:
+@error_tracker.track_errors(handler_name="cmd_clear_stats")
+async def cmd_clear_stats(message: Message, bot: Bot, command: CommandObject) -> None:
+    if not message.from_user:
+        return
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("⚠️ Este comando solo funciona en grupos.")
         return
 
     if not await is_admin(bot, message.chat.id, message.from_user.id):
         await message.answer("❌ Solo los administradores pueden borrar estadísticas.")
+        return
+
+    user_id = message.from_user.id
+    ts = _pending.pop(user_id, 0)
+    if ts and time.time() - ts <= CONFIRM_TIMEOUT:
+        pass  # confirmado
+    else:
+        _pending[user_id] = time.time()
+        msg = await message.answer(
+            "⚠️ <b>¿Estás seguro?</b> Esta acción eliminará TODAS las "
+            "estadísticas, XP, niveles y rachas del grupo.\n\n"
+            "Escribe /clear_stats de nuevo en los próximos 15 segundos para confirmar."
+        )
+        asyncio.create_task(delete_after(msg, delay=CONFIRM_TIMEOUT))
         return
 
     status = await message.answer("🗑️ Borrando todas las estadísticas...")

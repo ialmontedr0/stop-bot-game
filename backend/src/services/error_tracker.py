@@ -6,6 +6,8 @@ import traceback as tb
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from aiogram import Bot
+
 from src.db.engine import async_session_factory
 from src.db.repositories.error_log_repository import ErrorLogRepository
 
@@ -143,6 +145,36 @@ class ErrorTracker:
 
     def __init__(self) -> None:
         self._captured_count: int = 0
+        self._bot: Bot | None = None
+
+    def set_bot(self, bot: Bot) -> None:
+        self._bot = bot
+
+    async def _notify_admins(
+        self, group_chat_id: int, exc_type: str, exc_msg: str, handler: str | None
+    ) -> None:
+        bot = self._bot
+        if not bot:
+            return
+        try:
+            from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+
+            admins = await bot.get_chat_administrators(group_chat_id)
+            text = (
+                "🔴 <b>Error CRÍTICO en el juego</b>\n\n"
+                f"<b>Tipo:</b> <code>{exc_type}</code>\n"
+                f"<b>Mensaje:</b> {exc_msg[:200]}\n"
+                f"<b>Handler:</b> {handler or 'desconocido'}\n"
+                f"<b>Grupo:</b> {group_chat_id}\n\n"
+                "Usa /diagnose en el grupo para más detalles."
+            )
+            for admin in admins:
+                if admin.user.is_bot:
+                    continue
+                with contextlib.suppress(TelegramBadRequest, TelegramForbiddenError):
+                    await bot.send_message(admin.user.id, text)
+        except Exception:
+            logger.warning("No se pudo notificar admins del grupo %s", group_chat_id)
 
     async def capture_exception(
         self,
@@ -151,6 +183,7 @@ class ErrorTracker:
         user_id: int | None = None,
         game_id: int | None = None,
         telegram_id: int | None = None,
+        group_chat_id: int | None = None,
         context: dict[str, Any] | None = None,
         level: str = "ERROR",
     ) -> int | None:
@@ -185,6 +218,12 @@ class ErrorTracker:
                     exc_type,
                     handler,
                 )
+
+                if group_chat_id and level in ("CRITICAL", "HIGH"):
+                    asyncio.create_task(
+                        self._notify_admins(group_chat_id, exc_type, exc_msg, handler)
+                    )
+
                 return log.id
         except Exception as db_err:
             logger.error(
@@ -228,6 +267,8 @@ class ErrorTracker:
                         user_id = getattr(player, "id", None)
                         telegram_id = getattr(player, "telegram_id", None)
 
+                    group_chat_id = None
+
                     callback = kwargs.get("callback")
                     if callback:
                         data = getattr(callback, "data", "")
@@ -235,13 +276,18 @@ class ErrorTracker:
                             with contextlib.suppress(ValueError, IndexError):
                                 game_id = int(data.split(":")[1])
                         context["callback_data"] = data
+                        chat = getattr(callback, "message", None)
+                        if chat:
+                            group_chat_id = getattr(chat, "chat", None)
+                            group_chat_id = getattr(group_chat_id, "id", None) if group_chat_id else None
 
                     message = kwargs.get("message")
                     if message:
                         context["message_text"] = getattr(message, "text", "")
-                        context["chat_type"] = (
-                            getattr(message.chat, "type", "") if message.chat else ""
-                        )
+                        chat_type = getattr(message.chat, "type", "") if message.chat else ""
+                        context["chat_type"] = chat_type
+                        if chat_type in ("group", "supergroup"):
+                            group_chat_id = message.chat.id
 
                     context["handler"] = handler_name or func.__name__
 
@@ -251,6 +297,7 @@ class ErrorTracker:
                         user_id=user_id,
                         game_id=game_id,
                         telegram_id=telegram_id,
+                        group_chat_id=group_chat_id,
                         context=context,
                     )
                     raise

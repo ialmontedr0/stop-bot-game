@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
 from typing import Optional
 
+from src.core.text_utils import utcnow
+
 from sqlalchemy import (
     BigInteger,
     ForeignKey,
@@ -25,7 +27,7 @@ class Player(Base):
     last_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     language_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: utcnow()
     )
 
     game_players: Mapped[list["GamePlayer"]] = relationship(
@@ -55,7 +57,7 @@ class Game(Base):
     current_round: Mapped[int] = mapped_column(default=0)
     total_rounds: Mapped[int] = mapped_column(default=5)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: utcnow()
     )
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
@@ -77,7 +79,7 @@ class GamePlayer(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
     score: Mapped[int] = mapped_column(default=0)
     joined_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: utcnow()
     )
     is_host: Mapped[bool] = mapped_column(default=False)
 
@@ -121,7 +123,7 @@ class Answer(Base):
     is_correct: Mapped[bool | None] = mapped_column(nullable=True)
     score: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: utcnow()
     )
 
     round: Mapped["Round"] = relationship(back_populates="answers")
@@ -158,8 +160,8 @@ class PlayerXP(Base):
     level: Mapped[int] = mapped_column(default=1)
     total_xp_earned: Mapped[int] = mapped_column(default=0)
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
-        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        default=lambda: utcnow(),
+        onupdate=lambda: utcnow(),
     )
 
     player: Mapped["Player"] = relationship(back_populates="xp")
@@ -176,8 +178,8 @@ class Streak(Base):
     max_streak: Mapped[int] = mapped_column(default=0)
     last_played_date: Mapped[date | None] = mapped_column(nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
-        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        default=lambda: utcnow(),
+        onupdate=lambda: utcnow(),
     )
 
     player: Mapped["Player"] = relationship(back_populates="streak")
@@ -194,7 +196,7 @@ class SeasonalEvent(Base):
     ends_at: Mapped[datetime] = mapped_column()
     active: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: utcnow()
     )
 
 
@@ -222,7 +224,7 @@ class WordListItem(Base):
     normalized: Mapped[str] = mapped_column(String(128), index=True)
     source: Mapped[str] = mapped_column(String(16), default="seed")
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: utcnow()
     )
 
     def __repr__(self) -> str:
@@ -234,7 +236,7 @@ class ErrorLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     timestamp: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True
+        default=lambda: utcnow(), index=True
     )
     level: Mapped[str] = mapped_column(String(20), default="ERROR")
     handler: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -252,6 +254,17 @@ class ErrorLog(Base):
         return f"<ErrorLog id={self.id} type={self.exception_type}>"
 
 
+class GameStateCache(Base):
+    __tablename__ = "game_state_cache"
+
+    key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: utcnow(),
+        onupdate=lambda: utcnow(),
+    )
+
+
 class MessageLog(Base):
     __tablename__ = "message_logs"
 
@@ -259,5 +272,5 @@ class MessageLog(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
     message_id: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: utcnow()
     )
