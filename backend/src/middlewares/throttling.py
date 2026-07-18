@@ -1,6 +1,8 @@
+import contextlib
 import time
 
 from aiogram import BaseMiddleware
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message, TelegramObject
 from cachetools import TTLCache
 
@@ -19,7 +21,8 @@ class ThrottlingMiddleware(BaseMiddleware):
             last = self.cache.get(user_id, 0.0)
             if now - last < self.rate_limit:
                 if isinstance(event, CallbackQuery):
-                    await event.answer("⏳ Demasiado rápido. Espera un momento.", show_alert=False)
+                    with contextlib.suppress(TelegramBadRequest):
+                        await event.answer("⏳ Demasiado rápido. Espera un momento.", show_alert=False)
                 return
             self.cache[user_id] = now
         return await handler(event, data)

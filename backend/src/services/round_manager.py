@@ -502,7 +502,8 @@ class RoundManager:
 
         # Lock liberado — cerrar ronda fuera del lock (evita deadlock reentrante)
         if should_close:
-            await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.answer("⏹ ¡Ronda detenida!", show_alert=False)
             await self._close_round(game_id, "stop", bot)
 
     async def _close_round(self, game_id: int, reason: str, bot: Bot) -> None:
@@ -810,7 +811,8 @@ class RoundManager:
             if state.inter_round_message_id:
                 with contextlib.suppress(TelegramBadRequest):
                     await bot.delete_message(state.group_chat_id, state.inter_round_message_id)
-            await callback.answer("▶️ Avanzando a la siguiente ronda...", show_alert=False)
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.answer("▶️ Avanzando a la siguiente ronda...", show_alert=False)
             await self._prompt_letter_selection(state, bot)
 
     async def handle_stop_game(
@@ -854,9 +856,10 @@ class RoundManager:
             if state.inter_round_message_id:
                 with contextlib.suppress(TelegramBadRequest):
                     await bot.delete_message(state.group_chat_id, state.inter_round_message_id)
-            await callback.answer(
-                "⏹ Partida detenida. Calculando puntuaciones...", show_alert=False
-            )
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.answer(
+                    "⏹ Partida detenida. Calculando puntuaciones...", show_alert=False
+                )
 
         # Lock liberado - operaciones lentas fuera de la seccion critica
         await self._end_game(state, bot)
@@ -947,7 +950,8 @@ class RoundManager:
             next_number = state.round_number + 1
 
         # ── Salimos del lock antes de I/O pesado ──
-        await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.answer(f"✅ Letra {letter} seleccionada", show_alert=False)
 
         if state.letter_message_id:
             with contextlib.suppress(TelegramBadRequest):
@@ -1012,7 +1016,8 @@ class RoundManager:
 
             letter = random.choice(get_alphabet(state.include_n))
 
-            await callback.answer(f"🎲 Letra aleatoria: {letter}", show_alert=False)
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.answer(f"🎲 Letra aleatoria: {letter}", show_alert=False)
 
             if state.letter_message_id:
                 with contextlib.suppress(TelegramBadRequest):
