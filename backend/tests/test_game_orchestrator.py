@@ -140,14 +140,17 @@ class TestLobbyManagerQueries:
 class TestCreateLobby:
     @patch.object(_game_orch_mod, "async_session_factory")
     @patch.object(_game_orch_mod, "GameRepository")
+    @patch.object(_game_orch_mod, "event_service")
     async def test_create_lobby_success(
         self,
+        mock_event_service,
         mock_repo_cls,
         mock_session_factory,
         fresh_manager,
         mock_host_player,
         mock_bot,
     ):
+        mock_event_service.get_active_events = AsyncMock(return_value=[])
         mock_session = MagicMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 

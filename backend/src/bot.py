@@ -18,6 +18,7 @@ from src.core.config import settings
 from src.db.engine import async_session_factory, engine
 from src.db.repositories.leaderboard_repository import LeaderboardRepository
 from src.db.repositories.message_log_repository import MessageLogRepository
+from src.handlers.admin.event_creator import event_creator_router
 from src.handlers.admin.events import admin_router
 from src.handlers.game import diagnose_router, game_router, round_router
 from src.handlers.game.clear import clear_router
@@ -32,6 +33,7 @@ from src.middlewares.throttling import ThrottlingMiddleware
 from src.middlewares.user_exists import UserExistsMiddleware
 from src.monitoring.health_server import run_health_server_sync
 from src.monitoring.metrics import redis_connected
+from src.services.event_service import event_service
 from src.services.game_orchestrator import game_orchestrator
 from src.services.game_state_store import create_game_state_store
 
@@ -130,7 +132,53 @@ def setup_logging() -> None:
 logger = structlog.get_logger(__name__)
 
 
-async def on_startup() -> None:
+async def _seed_bot_chats(bot: "LoggedBot") -> None:
+    """Registra en bot_chats los grupos conocidos que no estén ya registrados."""
+    from sqlalchemy import distinct, select
+
+    from src.db.models import BotChat, Game
+
+    async with async_session_factory() as session:
+        stmt = select(distinct(Game.group_chat_id))
+        result = await session.execute(stmt)
+        known_group_ids = [row[0] for row in result.all()]
+
+        if not known_group_ids:
+            return
+
+        existing_stmt = select(BotChat.chat_id)
+        existing_result = await session.execute(existing_stmt)
+        existing_ids = {row[0] for row in existing_result.all()}
+
+        new_groups = [gid for gid in known_group_ids if gid not in existing_ids]
+        if not new_groups:
+            return
+
+        added = 0
+        for gid in new_groups:
+            try:
+                chat = await bot.get_chat(gid)
+                title = chat.title or f"Grupo {gid}"
+                chat_type = chat.type or "group"
+            except Exception:
+                title = f"Grupo {gid}"
+                chat_type = "group"
+
+            session.add(
+                BotChat(
+                    chat_id=gid,
+                    chat_title=title,
+                    chat_type=chat_type,
+                )
+            )
+            added += 1
+
+        await session.commit()
+        if added:
+            logger.info("BotChats sembrados desde games", extra={"added": added})
+
+
+async def on_startup(bot: Bot) -> None:
     logger.info("Bot iniciado", version="1.0.0")
 
     from src.services.photo_cache import photo_cache
@@ -151,6 +199,14 @@ async def on_startup() -> None:
     # Limpiar partidas huérfanas DESPUÉS de restaurar el store, para que
     # los lobbies/rondas restaurados sean evaluados correctamente.
     await game_orchestrator.cleanup_stale_games()
+
+    # Sembrar bot_chats desde games conocidos (tablas preexistentes)
+    await _seed_bot_chats(bot)
+
+    # Limpieza de eventos expirados
+    deactivated = await event_service.deactivate_expired()
+    if deactivated:
+        logger.info("Eventos expirados desactivados", extra={"count": deactivated})
 
     # Cargar word lists de color/fruta/pais desde DB
     from src.services.spell_corrector import get_corrector
@@ -281,6 +337,7 @@ async def main() -> None:
     dp.include_router(profile_router)
     dp.include_router(leaderboard_router)
     dp.include_router(admin_router)
+    dp.include_router(event_creator_router)
 
     throttle_mw = ThrottlingMiddleware()
     user_exists = UserExistsMiddleware()
@@ -302,6 +359,7 @@ async def main() -> None:
             # Fallback para Windows: usar signal.signal()
             def _handler(s, frame, sig=sig):
                 asyncio.ensure_future(_do_shutdown(signal.Signals(sig).name), loop=loop)
+
             signal.signal(sig, _handler)
 
     logger.info("Iniciando polling...")

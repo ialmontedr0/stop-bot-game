@@ -216,6 +216,8 @@ class ScoreEngine:
         spell_corrector: Optional["SpellCorrector"] = None,
         letter: str | None = None,
         game_id: int = 0,
+        event_rules: dict | None = None,
+        standings_before: dict[int, int] | None = None,
     ) -> tuple[dict[int, int], dict[int, list[dict]]]:
         totals: dict[int, int] = defaultdict(int)
         details: dict[int, list[dict]] = defaultdict(list)
@@ -268,6 +270,15 @@ class ScoreEngine:
         if first_completer_id is not None and first_completer_id in totals:
             totals[first_completer_id] += FIRST_COMPLETER_BONUS
 
+        # ── Event rule scoring modifiers ──
+        event_bonuses: dict[int, list[str]] = defaultdict(list)
+        if event_rules:
+            self._apply_event_scoring(
+                totals, details, event_rules, num_categories,
+                answers_by_player, first_completer_id, standings_before,
+                event_bonuses,
+            )
+
         # ── Log estructurado de evaluación ──
         eval_results = []
         for pid, total in sorted(totals.items(), key=lambda x: x[1], reverse=True):
@@ -279,7 +290,12 @@ class ScoreEngine:
                     "correct": ad["is_correct"],
                     "score": ad["score"],
                 }
-            eval_results.append({"player_id": pid, "total": total, "categories": cat_scores})
+            eval_results.append({
+                "player_id": pid,
+                "total": total,
+                "categories": cat_scores,
+                "event_bonuses": event_bonuses.get(pid, []),
+            })
         logger.info(
             "score_evaluation",
             extra={
@@ -291,6 +307,109 @@ class ScoreEngine:
         )
 
         return dict(totals), dict(details)
+
+    @staticmethod
+    def _apply_event_scoring(
+        totals: dict[int, int],
+        details: dict[int, list[dict]],
+        event_rules: dict,
+        num_categories: int,
+        answers_by_player: dict[int, list[Answer]],
+        first_completer_id: int | None,
+        standings_before: dict[int, int] | None,
+        event_bonuses: dict[int, list[str]],
+    ) -> None:
+        cat_multipliers = event_rules.get("category_multipliers", {})
+        no_dup_bonus = event_rules.get("no_duplicates_bonus", 0)
+        all_filled_bonus = event_rules.get("bonus_all_filled", 0)
+        penalty_empty = event_rules.get("penalty_empty", 0)
+        shared_penalty = event_rules.get("shared_answer_penalty", 0)
+        comeback_bonus = event_rules.get("comeback_bonus", 0)
+        perfect_bonus = event_rules.get("perfect_round_bonus", 0)
+
+        all_pids = set(answers_by_player.keys())
+
+        # 1. Category multipliers
+        if cat_multipliers:
+            for pid in all_pids:
+                for ad in details.get(pid, []):
+                    cat = ad["word_slot"]
+                    mult = cat_multipliers.get(cat, 1.0)
+                    if mult != 1.0 and ad["score"] > 0:
+                        old_score = ad["score"]
+                        new_score = int(old_score * mult)
+                        ad["score"] = new_score
+                        totals[pid] += (new_score - old_score)
+                        event_bonuses[pid].append(f"{cat} x{mult}")
+
+        # 2. No duplicates bonus
+        if no_dup_bonus > 0:
+            for pid in all_pids:
+                for ad in details.get(pid, []):
+                    if ad["is_correct"] and ad["score"] >= UNIQUE_POINTS:
+                        totals[pid] += no_dup_bonus
+                        event_bonuses[pid].append(f"única +{no_dup_bonus}")
+
+        # 3. Shared answer penalty
+        if shared_penalty < 0:
+            for canonical_cat, player_answers in _group_by_category(answers_by_player).items():
+                norm_map: dict[str, list[int]] = {}
+                for pid, ans in player_answers:
+                    txt = ans.raw_text.strip()
+                    if txt:
+                        from src.services.score_engine import _normalize as _norm
+                        norm = _norm(txt)
+                        if norm:
+                            norm_map.setdefault(norm, []).append(pid)
+                for norm, pids in norm_map.items():
+                    if len(pids) > 1:
+                        for pid in pids:
+                            totals[pid] += shared_penalty
+                            event_bonuses[pid].append(f"duplicado {shared_penalty}")
+
+        # 4. Bonus all filled
+        if all_filled_bonus > 0:
+            for pid in all_pids:
+                filled = sum(
+                    1 for ad in details.get(pid, []) if ad["is_correct"]
+                )
+                if filled >= num_categories:
+                    totals[pid] += all_filled_bonus
+                    event_bonuses[pid].append(f"llenas +{all_filled_bonus}")
+
+        # 5. Penalty empty
+        if penalty_empty < 0:
+            for pid in all_pids:
+                filled = sum(
+                    1 for ad in details.get(pid, []) if ad["is_correct"]
+                )
+                empty_count = num_categories - filled
+                if empty_count > 0:
+                    penalty_total = penalty_empty * empty_count
+                    totals[pid] += penalty_total
+                    event_bonuses[pid].append(f"vacías {penalty_total}")
+
+        # 6. Comeback bonus
+        if comeback_bonus > 0 and standings_before:
+            min_score = min(standings_before.values()) if standings_before else 0
+            last_place_pids = [pid for pid, s in standings_before.items() if s == min_score]
+            for pid in last_place_pids:
+                if pid in totals:
+                    totals[pid] += comeback_bonus
+                    event_bonuses[pid].append(f"comeback +{comeback_bonus}")
+
+        # 7. Perfect round bonus
+        if perfect_bonus > 0 and len(all_pids) > 1:
+            all_perfect = True
+            for pid in all_pids:
+                filled = sum(1 for ad in details.get(pid, []) if ad["is_correct"])
+                if filled < num_categories:
+                    all_perfect = False
+                    break
+            if all_perfect:
+                for pid in all_pids:
+                    totals[pid] += perfect_bonus
+                    event_bonuses[pid].append(f"ronda perfecta +{perfect_bonus}")
 
     @staticmethod
     def apply_bonus(

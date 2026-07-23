@@ -14,6 +14,7 @@ from src.db.engine import async_session_factory
 from src.db.models import GamePlayer, GroupConfig, Player
 from src.db.repositories import GameRepository
 from src.keyboards.lobby import lobby_keyboard
+from src.services.event_service import event_service
 from src.services.game_state_store import GameStateStore
 from src.services.round_manager import (
     PLACEHOLDER,
@@ -50,6 +51,7 @@ class LobbyState:
     started: bool = False
     start_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     cancelled: bool = False
+    event_id: int | None = None
 
 
 class LobbyManager:
@@ -95,7 +97,7 @@ class LobbyManager:
         return None
 
     # --- Crear lobby --------------------------------------------------------
-    async def create_lobby(self, group_chat_id: int, host_player: Player, bot: Bot) -> str | None:
+    async def create_lobby(self, group_chat_id: int, host_player: Player, bot: Bot, event_id: int | None = None) -> str | None:
         zombie = self._lobbies.get(group_chat_id)
         if zombie:
             await self._cleanup(zombie)
@@ -124,14 +126,20 @@ class LobbyManager:
             message_id=0,
             player_telegram_ids=[host_player.telegram_id],
             player_display_names=[host_name],
+            event_id=event_id,
         )
 
         # Almacenar en _lobbies inmediatamente para que cancel_game pueda
         # encontrar este lobby incluso antes de que se complete la creación.
         self._lobbies[group_chat_id] = state
 
+        active_events = await event_service.get_active_events(state.group_chat_id)
+        event_text = self._get_event_text(active_events)
         text = self._format_lobby_message(
-            title="🛑 STOP - Sala abierta", count=1, players=[host_name]
+            title="🛑 STOP - Sala abierta",
+            count=1,
+            players=[host_name],
+            event_text=event_text,
         )
         keyboard = lobby_keyboard(game.id, is_host=True, in_lobby=True)
         msg = await bot.send_message(group_chat_id, text, reply_markup=keyboard)
@@ -297,8 +305,14 @@ class LobbyManager:
             self._reset_auto_start(state, bot)
             try:
                 title = "🛑 STOP - Sala abierta"
+                event_text = self._get_event_text(
+                    await event_service.get_active_events(state.group_chat_id)
+                )
                 text = self._format_lobby_message(
-                    title, len(state.player_telegram_ids), state.player_display_names
+                    title,
+                    len(state.player_telegram_ids),
+                    state.player_display_names,
+                    event_text=event_text,
                 )
                 await bot.edit_message_text(
                     text,
@@ -386,6 +400,7 @@ class LobbyManager:
                 is_host = True
             else:
                 from src.utils import is_admin
+
                 if not await is_admin(bot, group_chat_id, player.telegram_id):
                     return "❌ Solo el host o un administrador del grupo puede cancelar la partida."
 
@@ -453,8 +468,14 @@ class LobbyManager:
                     break
                 dots = (dots % 3) + 1
                 title = "🛑 STOP - Sala abierta" + "." * dots
+                event_text = self._get_event_text(
+                    await event_service.get_active_events(state.group_chat_id)
+                )
                 text = self._format_lobby_message(
-                    title, len(state.player_telegram_ids), state.player_display_names
+                    title,
+                    len(state.player_telegram_ids),
+                    state.player_display_names,
+                    event_text=event_text,
                 )
                 is_host = state.host_telegram_id in state.player_telegram_ids
                 keyboard = lobby_keyboard(state.game_id, is_host=is_host, in_lobby=True)
@@ -516,6 +537,36 @@ class LobbyManager:
             round_time = group_config.round_time
             include_n = group_config.include_n
 
+        # ─── Cargar reglas del evento ───────────────────────────────
+        event_rules = None
+        event_name = None
+        event_multiplier = None
+        if state.event_id:
+            async with async_session_factory() as session:
+                from sqlalchemy import select as sa_select
+                from src.db.models import SeasonalEvent
+                stmt = sa_select(SeasonalEvent).where(SeasonalEvent.id == state.event_id)
+                result = await session.execute(stmt)
+                db_event = result.scalar_one_or_none()
+                if db_event and db_event.rules:
+                    from src.services.event_rules import EventRules
+                    event_rules = EventRules.from_json(db_event.rules)
+                    logger.info("Evento %s cargado: %s", state.event_id, db_event.name)
+                elif db_event:
+                    from src.services.event_rules import EventRules
+                    event_rules = EventRules()
+                if db_event:
+                    event_name = db_event.name
+                    event_multiplier = db_event.multiplier
+
+        # Aplicar reglas del evento a configuración
+        if event_rules:
+            event_cats = event_rules.get_active_categories()
+            if event_cats:
+                categories = event_cats
+            event_time = event_rules.get_round_time(default=round_time)
+            round_time = event_time
+
         logger.info("Modo validacion para grupo %s: %s", state.group_chat_id, validation_mode)
 
         with contextlib.suppress(TelegramBadRequest):
@@ -555,7 +606,11 @@ class LobbyManager:
                 db_game.current_round = 1
                 await repo.update_game_status(db_game, STATUS_PLAYING)
 
-        letter = random.choice(get_alphabet(include_n))
+        # Elegir letra (respetando reglas del evento)
+        if event_rules and event_rules.is_letter_forced():
+            letter = event_rules.get_letter_for_round(round_number=1)
+        else:
+            letter = random.choice(get_alphabet(include_n))
 
         if group_config:
             total_rounds = group_config.default_rounds
@@ -578,6 +633,9 @@ class LobbyManager:
             categories=categories,
             include_n=include_n,
             validation_mode=validation_mode,
+            event_rules=event_rules.to_dict() if event_rules else None,
+            event_name=event_name,
+            event_multiplier=event_multiplier,
         )
 
     # --- Limpieza --------------------------------------------------------------
@@ -586,15 +644,81 @@ class LobbyManager:
         if self._store:
             task = asyncio.create_task(self._store.delete_lobby(state.group_chat_id))
             task.add_done_callback(
-                lambda t: logger.exception(
-                    "Error al eliminar lobby del store: group=%s", state.group_chat_id
+                lambda t: (
+                    logger.exception(
+                        "Error al eliminar lobby del store: group=%s", state.group_chat_id
+                    )
+                    if t.exception()
+                    else None
                 )
-                if t.exception()
-                else None
             )
         for task in (state.expire_task, state.animation_task, state.auto_start_task):
             if task and not task.done():
                 task.cancel()
+
+    @staticmethod
+    def _get_event_text(active_events: list[dict]) -> str:
+        if not active_events:
+            return ""
+        ev = active_events[0]
+        lines = [f"🎉 <b>Evento: {ev['name']}</b> — x{ev['multiplier']} XP"]
+        rules = ev.get("rules")
+        if rules and hasattr(rules, "get_round_time"):
+            rt = rules.get_round_time(None)
+            if rt is not None:
+                lines.append(f"   ⏱ {rt}s por ronda")
+                if rules.time_decreasing:
+                    lines.append(f"      📉 decreciente -{rules.time_decreasing_amount}s/ronda (mín {rules.time_minimum}s)")
+            if rules.is_letter_forced():
+                if rules.letter_sequence:
+                    seq = ", ".join(rules.letter_sequence)
+                    lines.append(f"   🔤 Secuencia: {seq}")
+                else:
+                    forced = rules.forced_letter
+                    if forced:
+                        lines.append(f"   🔤 Letra: {forced}")
+            disabled = rules.categories_disabled
+            if disabled:
+                lines.append(f"   🚫 Sin: {', '.join(disabled)}")
+            hidden = rules.hidden_categories
+            if hidden:
+                lines.append(f"   🎭 Ocultas: {', '.join(hidden)}")
+            mystery = rules.mystery_category
+            if mystery:
+                lines.append(f"   🔮 Mystery: {mystery}")
+            cat_mults = rules.category_multipliers
+            if cat_mults:
+                mults = ", ".join(f"{c} x{m}" for c, m in cat_mults.items())
+                lines.append(f"   ⚡ Bonus: {mults}")
+            if rules.speed_bonus:
+                lines.append(f"   🏃 Speed: +{rules.speed_bonus} pts")
+            if rules.sudden_death:
+                lines.append(f"   💀 Modo Supervivencia")
+            if rules.streak_multiplier > 1.0:
+                lines.append(f"   🔥 Streak: x{rules.streak_multiplier}")
+            if rules.no_stop:
+                lines.append(f"   🚫 Sin botón Stop")
+            if rules.double_points_last_round:
+                lines.append(f"   2\u20e3 Ultima ronda doble")
+            if rules.min_words_required:
+                lines.append(f"   📝 Mínimo {rules.min_words_required} categorías")
+        else:
+            _rules = rules or {}
+            if _rules.get("time_override"):
+                lines.append(f"   ⏱ {_rules['time_override']}s por ronda")
+            if _rules.get("forced_letter"):
+                lines.append(f"   🔤 Letra: {_rules['forced_letter']}")
+            disabled = _rules.get("categories_disabled", [])
+            if disabled:
+                lines.append(f"   🚫 Sin: {', '.join(disabled)}")
+            hidden = _rules.get("hidden_categories", [])
+            if hidden:
+                lines.append(f"   🎭 Ocultas: {', '.join(hidden)}")
+            cat_mults = _rules.get("category_multipliers", {})
+            if cat_mults:
+                mults = ", ".join(f"{c} x{m}" for c, m in cat_mults.items())
+                lines.append(f"   ⚡ Bonus: {mults}")
+        return "\n".join(lines)
 
     # --- Formateo de mensaje ---------------------------------------------------
     @staticmethod
@@ -602,10 +726,14 @@ class LobbyManager:
         title: str,
         count: int,
         players: list[str],
+        event_text: str = "",
     ) -> str:
         lines = [f"<b>{title}</b>", "", f"👤 Jugadores: {count}/{MAX_PLAYERS}", ""]
         if players:
             lines.extend(f"  {i + 1}. {name}" for i, name in enumerate(players))
+            lines.append("")
+        if event_text:
+            lines.append(event_text)
             lines.append("")
         lines.append(
             f"⏱ Inicio automático en {AUTO_START_DELAY}s tras la última "

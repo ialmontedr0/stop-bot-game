@@ -1,3 +1,4 @@
+-- Active: 1779464667123@@127.0.0.1@5432@stopbot
 # Fase 7 — Experiencia moderna: animaciones, UI, imágenes
 
 **Objetivo:** Hacer el bot visualmente atractivo — imágenes generadas con Pillow, animaciones en vivo, botones estilizados, formato HTML rico, spoilers y stickers.

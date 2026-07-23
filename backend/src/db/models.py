@@ -1,16 +1,17 @@
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from src.core.text_utils import utcnow
-
 from sqlalchemy import (
     BigInteger,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from src.core.text_utils import utcnow
 
 
 class Base(DeclarativeBase):
@@ -26,9 +27,7 @@ class Player(Base):
     first_name: Mapped[str] = mapped_column(String(128), default="")
     last_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     language_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow()
-    )
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())
 
     game_players: Mapped[list["GamePlayer"]] = relationship(
         back_populates="player", cascade="all, delete-orphan"
@@ -56,9 +55,7 @@ class Game(Base):
     status: Mapped[str] = mapped_column(String(20), default="lobby")
     current_round: Mapped[int] = mapped_column(default=0)
     total_rounds: Mapped[int] = mapped_column(default=5)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow()
-    )
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     players: Mapped[list["GamePlayer"]] = relationship(
@@ -78,9 +75,7 @@ class GamePlayer(Base):
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"))
     score: Mapped[int] = mapped_column(default=0)
-    joined_at: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow()
-    )
+    joined_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())
     is_host: Mapped[bool] = mapped_column(default=False)
 
     game: Mapped["Game"] = relationship(back_populates="players")
@@ -122,9 +117,7 @@ class Answer(Base):
     normalized_text: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_correct: Mapped[bool | None] = mapped_column(nullable=True)
     score: Mapped[int] = mapped_column(default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow()
-    )
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())
 
     round: Mapped["Round"] = relationship(back_populates="answers")
     player: Mapped["Player"] = relationship(back_populates="answers")
@@ -189,15 +182,46 @@ class SeasonalEvent(Base):
     __tablename__ = "seasonal_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(64), unique=True)
+    group_chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    name: Mapped[str] = mapped_column(String(64))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    multiplier: Mapped[float] = mapped_column(default=1.0)  # ej: 2.0 = doble xp
-    starts_at: Mapped[datetime] = mapped_column()
-    ends_at: Mapped[datetime] = mapped_column()
+
+    # Tipo de evento: "one_time" | "daily_recurring" | "permanent"
+    event_type: Mapped[str] = mapped_column(String(20), default="one_time")
+
+    # Multiplicador base
+    multiplier: Mapped[float] = mapped_column(default=1.0)
+
+    # Horario one-time (nullable para daily_recurring/permanent)
+    starts_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # Horario diario recurrente (nullable para one_time/permanent)
+    daily_start_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_start_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_end_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_end_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active_days: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timezone: Mapped[str] = mapped_column(String(40), default="America/Argentina/Buenos_Aires")
+
+    # Reglas personalizadas (JSON string)
+    rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Estado
     active: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow()
-    )
+    is_paused: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())
+
+
+class BotChat(Base):
+    __tablename__ = "bot_chats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    chat_title: Mapped[str] = mapped_column(String(256), default="")
+    chat_type: Mapped[str] = mapped_column(String(20), default="group")
+    added_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())
+    removed_at: Mapped[datetime | None] = mapped_column(nullable=True, default=None)
 
 
 class GroupConfig(Base):
@@ -223,9 +247,7 @@ class WordListItem(Base):
     word: Mapped[str] = mapped_column(String(128))
     normalized: Mapped[str] = mapped_column(String(128), index=True)
     source: Mapped[str] = mapped_column(String(16), default="seed")
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow()
-    )
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())
 
     def __repr__(self) -> str:
         return f"<WordListItem id={self.id} cat={self.category} word={self.word}>"
@@ -235,9 +257,7 @@ class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    timestamp: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow(), index=True
-    )
+    timestamp: Mapped[datetime] = mapped_column(default=lambda: utcnow(), index=True)
     level: Mapped[str] = mapped_column(String(20), default="ERROR")
     handler: Mapped[str | None] = mapped_column(String(128), nullable=True)
     user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
@@ -271,6 +291,4 @@ class MessageLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
     message_id: Mapped[int] = mapped_column(BigInteger)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: utcnow()
-    )
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow())

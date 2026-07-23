@@ -1,7 +1,9 @@
 import asyncio
 import contextlib
+import json
 import random
 import re
+import time
 import unicodedata
 from dataclasses import dataclass, field
 
@@ -20,6 +22,7 @@ from src.db.engine import async_session_factory
 from src.db.models import GamePlayer, Player
 from src.db.repositories.game_repository import GameRepository
 from src.db.repositories.round_repository import RoundRepository
+from src.services.event_rules import EventRules
 from src.image_generator import generate_podium_image
 from src.keyboards.round import inter_round_keyboard, letter_keyboard, stop_keyboard
 from src.services.game_state_store import GameStateStore
@@ -97,6 +100,12 @@ class RoundState:
     inter_round_timeout_task: asyncio.Task | None = None
     cancelled: bool = False
     validation_mode: str = "local"
+    event_rules: dict | None = None
+    event_name: str | None = None
+    event_multiplier: float | None = None
+    round_started_at: float | None = None
+    speed_bonus_claimed: bool = False
+    eliminated_player_ids: set[int] = field(default_factory=set)
 
 
 class RoundManager:
@@ -184,11 +193,42 @@ class RoundManager:
         categories: list[str] | None = None,
         include_n: bool = False,
         validation_mode: str = "local",
+        event_rules: dict | None = None,
+        event_name: str | None = None,
+        event_multiplier: float | None = None,
     ) -> None:
-        # Usar categorias de GroupConfig (o las default)
         effective_categories = categories or CATEGORIES
 
-        text = self._format_round_message(round_number, letter, effective_categories, round_time)
+        # ── Apply event rules ──
+        if event_rules:
+            if isinstance(event_rules, dict):
+                rules = EventRules.from_json(json.dumps(event_rules))
+            else:
+                rules = event_rules
+
+            # Time decreasing
+            round_time = rules.get_round_time_for_number(round_number, round_time)
+
+            # Hidden/mystery categories: use display categories (hide hidden, replace mystery)
+            display_categories = [
+                c for c in effective_categories
+                if not rules.is_category_hidden(c)
+            ]
+            if rules.mystery_category and rules.mystery_category in display_categories:
+                display_categories = [
+                    "???" if c == rules.mystery_category else c
+                    for c in display_categories
+                ]
+        else:
+            rules = None
+            display_categories = list(effective_categories)
+
+        event_display = ""
+        if event_name:
+            mult = f" x{event_multiplier}" if event_multiplier else ""
+            event_display = f"\U0001f389 <b>{event_name}</b>{mult}"
+
+        text = self._format_round_message(round_number, letter, display_categories, round_time, event_display=event_display)
 
         while True:
             try:
@@ -230,6 +270,10 @@ class RoundManager:
             round_time=round_time,
             include_n=include_n,
             validation_mode=validation_mode,
+            event_rules=event_rules,
+            event_name=event_name,
+            event_multiplier=event_multiplier,
+            round_started_at=time.time(),
         )
 
         async with async_session_factory() as session:
@@ -298,6 +342,15 @@ class RoundManager:
         # Determinar si todas las categorías tienen contenido real
         # (antes de AI validation, para que first_completer no dependa de la IA)
         has_real_content = all(len(v.strip()) >= 2 for v in parsed.values())
+
+        # ── min_words_required check ──
+        min_words = 0
+        if state.event_rules:
+            rules = EventRules.from_json(json.dumps(state.event_rules))
+            min_words = rules.min_words_required
+
+        non_empty_count = sum(1 for v in parsed.values() if v.strip())
+        meets_min = non_empty_count >= min_words if min_words > 0 else True
 
         send_stop = False
 
@@ -387,7 +440,7 @@ class RoundManager:
                 self._safe_task(self._store.set_round(state))
             self._debounced_update(state, bot)
 
-            all_filled = len(parsed) == len(state.categories) and has_real_content
+            all_filled = len(parsed) == len(state.categories) and has_real_content and meets_min
             logger.info(
                 "submit_answers",
                 extra={
@@ -404,18 +457,25 @@ class RoundManager:
             if all_filled:
                 state.complete_player_ids.add(player.telegram_id)
 
+                # ── no_stop rule: never send stop button ──
+                no_stop = False
+                if state.event_rules:
+                    _rules = EventRules.from_json(json.dumps(state.event_rules))
+                    no_stop = _rules.no_stop
+
                 if state.first_completer_id is None:
                     state.first_completer_id = player.telegram_id
                     state.first_completer_db_id = player.id
                     name = player.first_name or player.username or f"ID{player.telegram_id}"
                     state.first_completer_name = name
 
-                    logger.info(
-                        "Enviando botón Stop para game %s, player %s",
-                        game_id,
-                        player.telegram_id,
-                    )
-                    send_stop = True
+                    if not no_stop:
+                        logger.info(
+                            "Enviando botón Stop para game %s, player %s",
+                            game_id,
+                            player.telegram_id,
+                        )
+                        send_stop = True
                 else:
                     logger.info(
                         "first_completer_id ya era %s, no se envía otro Stop",
@@ -471,6 +531,13 @@ class RoundManager:
             if not state:
                 await callback.answer("❌ Esta ronda ya terminó.", show_alert=False)
                 return
+
+            # ── no_stop rule ──
+            if state.event_rules:
+                _rules = EventRules.from_json(json.dumps(state.event_rules))
+                if _rules.no_stop:
+                    await callback.answer("❌ Stop no está habilitado en este evento.", show_alert=False)
+                    return
 
             if player_id != state.first_completer_id:
                 await callback.answer(
@@ -723,6 +790,21 @@ class RoundManager:
     ) -> None:
         if state.cancelled:
             return
+        # ── sudden_death: check if all players eliminated ──
+        if state.eliminated_player_ids:
+            active_players = set(state.player_names.keys()) - state.eliminated_player_ids
+            if len(active_players) <= 1:
+                logger.info(
+                    "sudden_death_game_over game=%s remaining=%d",
+                    state.game_id, len(active_players),
+                )
+                await bot.send_message(
+                    state.group_chat_id,
+                    "💀 <b>¡Modo Supervivencia!</b> Todos los jugadores fueron eliminados.",
+                )
+                await self._end_game(state, bot)
+                return
+
         if state.round_number >= state.total_rounds:
             await self._end_game(state, bot)
             return
@@ -896,15 +978,24 @@ class RoundManager:
 
     async def _letter_timeout(self, msg, bot, state):
         await asyncio.sleep(LETTER_TIMEOUT)
-        # Adquirir el lock para verificar/pop atómicamente: si handle_letter_selection
-        # ya ganó la carrera, _letter_pending estará vacío y salimos sin acción.
         async with self._lock_for(state.game_id):
             if state.game_id not in self._letter_pending:
                 return
             self._letter_pending.pop(state.game_id, None)
         with contextlib.suppress(TelegramBadRequest, TelegramRetryAfter):
             await msg.delete()
-        letter = random.choice(get_alphabet(state.include_n))
+
+        # ── Enforce event letter rules on timeout ──
+        if state.event_rules:
+            rules = EventRules.from_json(json.dumps(state.event_rules))
+            forced = rules.get_letter_for_round(state.round_number + 1)
+            if forced:
+                letter = forced
+            else:
+                letter = random.choice(get_alphabet(state.include_n))
+        else:
+            letter = random.choice(get_alphabet(state.include_n))
+
         await self._start_next_round_with_letter(state, letter, bot)
 
     async def handle_letter_selection(
@@ -927,7 +1018,6 @@ class RoundManager:
                 await callback.answer("❌ Partida no activa.", show_alert=True)
                 return
 
-            # Si el state vino de _rounds, es una ronda activa, no una selección de letra pendiente
             if game_id in self._rounds:
                 await callback.answer("⏳ Ya hay una ronda en curso.", show_alert=True)
                 return
@@ -939,6 +1029,13 @@ class RoundManager:
             if player_id != state.leader_id:
                 await callback.answer("❌ Solo el líder puede elegir la letra.", show_alert=True)
                 return
+
+            # ── Enforce event letter rules ──
+            if state.event_rules:
+                rules = EventRules.from_json(json.dumps(state.event_rules))
+                forced = rules.get_letter_for_round(state.round_number + 1)
+                if forced:
+                    letter = forced
 
             # Reclamar ownership atómicamente bajo el lock (D1)
             self._letter_pending.pop(game_id, None)
@@ -974,6 +1071,9 @@ class RoundManager:
             categories=state.categories,
             include_n=state.include_n,
             validation_mode=state.validation_mode,
+            event_rules=state.event_rules,
+            event_name=state.event_name,
+            event_multiplier=state.event_multiplier,
         )
 
         # Countdown fuera del lock (solo envio de mensajes)
@@ -1048,6 +1148,9 @@ class RoundManager:
             categories=prev_state.categories,
             include_n=prev_state.include_n,
             validation_mode=prev_state.validation_mode,
+            event_rules=prev_state.event_rules,
+            event_name=prev_state.event_name,
+            event_multiplier=prev_state.event_multiplier,
         )
 
     async def _start_next_round_with_random(self, state, bot):
@@ -1092,7 +1195,7 @@ class RoundManager:
                     }
                 )
 
-            xp_results_list = await xp_service.award_all_players(rankings)
+            xp_results_list = await xp_service.award_all_players(rankings, group_chat_id=state.group_chat_id)
             xp_results = {r["telegram_id"]: r for r in xp_results_list}
 
         # Leaderboard: batch upsert + recalculate ranks en una sola sesión
@@ -1202,12 +1305,43 @@ class RoundManager:
         else:
             lines.append("  No hay puntuaciones registradas.")
 
-        from src.services.event_service import event_service
-
-        active_events = await event_service.get_active_events()
-        for event in active_events:
+        # ── Evento activo: mostrar reglas ──
+        if state.event_rules and state.event_name:
             lines.append("")
-            lines.append(f" <b>Evento en curso: {event['name']}</b> (x{event['multiplier']} XP)")
+            mult_text = f" x{state.event_multiplier}" if state.event_multiplier else ""
+            lines.append(f"\U0001f389 <b>Evento: {state.event_name}</b>{mult_text}")
+            try:
+                _rules = EventRules.from_json(json.dumps(state.event_rules))
+                rule_lines = []
+                if _rules.category_multipliers:
+                    for cat, mult in _rules.category_multipliers.items():
+                        rule_lines.append(f"\u2022 {cat} x{mult}")
+                if _rules.no_duplicates_bonus:
+                    rule_lines.append(f"\u2022 Respuesta \u00fanica +{_rules.no_duplicates_bonus}")
+                if _rules.bonus_all_filled:
+                    rule_lines.append(f"\u2022 Llenar todo +{_rules.bonus_all_filled}")
+                if _rules.speed_bonus:
+                    rule_lines.append(f"\u2022 Speed bonus +{_rules.speed_bonus}")
+                if _rules.double_points_last_round:
+                    rule_lines.append(f"\u2022 Ultima ronda x2")
+                if _rules.sudden_death:
+                    eliminated = len(state.eliminated_player_ids)
+                    if eliminated:
+                        rule_lines.append(f"\u2022 \U0001f480 {eliminated} jugador(es) eliminado(s)")
+                if _rules.streak_multiplier > 1.0:
+                    rule_lines.append(f"\u2022 Streak x{_rules.streak_multiplier}")
+                if rule_lines:
+                    lines.append("   \u26a1 Reglas del evento:")
+                    for rl in rule_lines:
+                        lines.append(f"     {rl}")
+            except Exception:
+                pass
+        else:
+            from src.services.event_service import event_service
+            active_events = await event_service.get_active_events(state.group_chat_id)
+            for event in active_events:
+                lines.append("")
+                lines.append(f" <b>Evento en curso: {event['name']}</b> (x{event['multiplier']} XP)")
 
         lines.append("")
         lines.append("<i>Gracias por jugar 🛑 Stop!</i>")
@@ -1371,6 +1505,21 @@ class RoundManager:
             repo = RoundRepository(session)
             answers_by_player = await repo.get_answers_by_player(round_id)
 
+            # ── Get standings before this round for comeback_bonus ──
+            standings_before = None
+            if state.event_rules:
+                try:
+                    from src.db.models import GamePlayer as GP, Player as P
+                    from sqlalchemy import select as sa_select
+                    stmt = sa_select(GP, P).join(P, GP.player_id == P.id).where(GP.game_id == state.game_id)
+                    result = await session.execute(stmt)
+                    standings_before = {
+                        row.P.telegram_id: row.GP.score or 0
+                        for row in result.all()
+                    }
+                except Exception:
+                    logger.exception("Error getting standings_before for comeback_bonus")
+
             engine = ScoreEngine()
             totals, details = engine.evaluate(
                 answers_by_player,
@@ -1379,7 +1528,36 @@ class RoundManager:
                 spell_corrector=get_corrector(),
                 letter=state.letter,
                 game_id=state.game_id,
+                event_rules=state.event_rules,
+                standings_before=standings_before,
             )
+
+            # ── double_points_last_round ──
+            if state.event_rules and state.round_number >= state.total_rounds:
+                _rules = EventRules.from_json(json.dumps(state.event_rules))
+                if _rules.double_points_last_round:
+                    for pid in totals:
+                        totals[pid] *= 2
+                    for pid in details:
+                        for ad in details[pid]:
+                            ad["score"] *= 2
+
+            # ── speed_bonus ──
+            if (state.event_rules and state.first_completer_id
+                    and state.round_started_at and not state.speed_bonus_claimed):
+                _rules = EventRules.from_json(json.dumps(state.event_rules))
+                if _rules.speed_bonus > 0:
+                    elapsed = time.time() - state.round_started_at
+                    if elapsed <= _rules.speed_bonus_window + _rules.get_round_time(
+                        state.round_time
+                    ):
+                        # Speed bonus applies if first completer finished within window
+                        # after round start (the window is relative to round start)
+                        if elapsed <= _rules.speed_bonus_window:
+                            pid = state.first_completer_id
+                            if pid in totals:
+                                totals[pid] += _rules.speed_bonus
+                                state.speed_bonus_claimed = True
 
             # ── Log estructurado de resultados de ronda ──
             players_data = []
@@ -1448,6 +1626,24 @@ class RoundManager:
 
             await session.commit()
 
+            # ── sudden_death: eliminate players with 0 score ──
+            if state.event_rules:
+                _rules = EventRules.from_json(json.dumps(state.event_rules))
+                if _rules.sudden_death:
+                    threshold = _rules.sudden_death_threshold
+                    for pid, score in totals.items():
+                        if score <= threshold:
+                            state.eliminated_player_ids.add(pid)
+                            logger.info(
+                                "sudden_death_elimination",
+                                extra={
+                                    "game_id": state.game_id,
+                                    "player_id": pid,
+                                    "score": score,
+                                    "threshold": threshold,
+                                },
+                            )
+
             return totals
 
     @staticmethod
@@ -1466,6 +1662,22 @@ class RoundManager:
         for pid, score in sorted(round_scores.items(), key=lambda x: x[1], reverse=True):
             name = state.player_names.get(pid, f"Jugador {pid}")
             lines.append(f"  {name}: {score} pts")
+
+        # ── Revelar categorías ocultas/mystery ──
+        if state.event_rules:
+            try:
+                _rules = EventRules.from_json(json.dumps(state.event_rules))
+                if _rules.hidden_categories or _rules.mystery_category:
+                    reveal_parts = []
+                    if _rules.hidden_categories:
+                        reveal_parts.append(f"🎭 Ocultas: {', '.join(_rules.hidden_categories)}")
+                    if _rules.mystery_category:
+                        reveal_parts.append(f"🔮 Mystery: {_rules.mystery_category}")
+                    if reveal_parts:
+                        lines.append("")
+                        lines.append("  " + " | ".join(reveal_parts))
+            except Exception:
+                pass
 
         if state.first_completer_name:
             lines.append("")
@@ -1575,10 +1787,20 @@ class RoundManager:
 
     @staticmethod
     def _format_round_message(
-        round_number: int, letter: str, categories: list[str], round_time: int
+        round_number: int, letter: str, categories: list[str], round_time: int,
+        event_display: str = "",
     ) -> str:
         cats_display = "\n".join(f"  <b>{cat}:</b> ..." for cat in categories)
-        return f"⏱ {round_time} segundos\n\nEnvía tus respuestas en este formato:\n\n{cats_display}"
+        lines = []
+        if event_display:
+            lines.append(event_display)
+            lines.append("")
+        lines.append(f"⏱ {round_time} segundos")
+        lines.append("")
+        lines.append("Envía tus respuestas en este formato:")
+        lines.append("")
+        lines.append(cats_display)
+        return "\n".join(lines)
 
     @staticmethod
     def _format_categories_only(categories: list[str]) -> str:

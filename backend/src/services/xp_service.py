@@ -69,6 +69,7 @@ class XPService:
         final_position: int,
         was_stopper: bool = False,
         unique_answers: int = 0,
+        group_chat_id: int = 0,
     ) -> dict:
         async with async_session_factory() as session:
             stmt = select(PlayerXP).where(PlayerXP.player_id == player_id)
@@ -97,7 +98,7 @@ class XPService:
 
             from src.services.event_service import event_service
 
-            multiplier = await event_service.get_active_multiplier()
+            multiplier = await event_service.get_active_multiplier(group_chat_id)
             xp_gained = int(xp_gained * multiplier)
 
             xp_record.xp += xp_gained
@@ -224,21 +225,22 @@ class XPService:
             "multiplier": multiplier,
         }
 
-    async def award_all_players(self, rankings: list[dict]) -> list[dict]:
+    async def award_all_players(
+        self,
+        rankings: list[dict],
+        group_chat_id: int = 0,
+    ) -> list[dict]:
         from src.services.event_service import event_service
 
-        multiplier = await event_service.get_active_multiplier()
+        multiplier = await event_service.get_active_multiplier(group_chat_id)
         results = []
         async with async_session_factory() as session:
             for rank in rankings:
                 streak_info = await self._update_streak_in_session(
-                    session, rank["player_id"],
+                    session,
+                    rank["player_id"],
                 )
-                streak_bonus = (
-                    XP_STREAK_BONUS
-                    if streak_info["current_streak"] >= 3
-                    else 0
-                )
+                streak_bonus = XP_STREAK_BONUS if streak_info["current_streak"] >= 3 else 0
                 xp_info = await self._award_game_xp_in_session(
                     session,
                     player_id=rank["player_id"],
